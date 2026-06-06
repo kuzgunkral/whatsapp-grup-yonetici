@@ -74,12 +74,13 @@ const HomeScreen = () => {
       Alert.alert('Uyarı', 'Telefon numaranızı girin (başında ülke kodu ile)');
       return;
     }
-    // Engine'i başlat ve bağlan
     try {
       botBridge.init();
-    } catch(e) {}
-    const clean = phoneNumber.replace(/[^0-9]/g, '');
-    botBridge.connect(clean);
+      const clean = phoneNumber.replace(/[^0-9]/g, '');
+      setTimeout(() => botBridge.connect(clean), 1000);
+    } catch(e) {
+      Alert.alert('Hata', 'Bağlantı başlatılamadı: ' + e.message);
+    }
   };
 
   const handleSelectGroup = (group) => {
