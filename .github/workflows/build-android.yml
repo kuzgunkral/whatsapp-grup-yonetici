@@ -31,7 +31,7 @@ jobs:
           echo "ndk.dir=$ANDROID_SDK_ROOT/ndk/25.1.8937393" >> android/local.properties
 
       - name: Install dependencies
-        run: npm install --ignore-scripts
+        run: npm install --legacy-peer-deps --ignore-scripts
 
       - name: Install Node.js project dependencies
         run: cd nodejs-assets/nodejs-project && npm install --ignore-scripts
