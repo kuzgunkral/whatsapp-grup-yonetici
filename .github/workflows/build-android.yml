@@ -33,6 +33,11 @@ jobs:
       - name: Install dependencies
         run: npm install --legacy-peer-deps
 
+      - name: Prepare nodejs-mobile
+        run: |
+          cd node_modules/nodejs-mobile-react-native
+          node scripts/install.js || true
+
       - name: Install Node.js project dependencies
         run: cd nodejs-assets/nodejs-project && npm install --ignore-scripts
 
