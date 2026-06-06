@@ -83,14 +83,14 @@ async function connect(phoneNumber) {
       if (update.connection === 'close') {
         isReady = false;
         if (pairingMode) {
-          // Pairing sonrasi - sadece bekle, reconnect yapma
-          // Kullanici kodu girince WhatsApp otomatik baglanacak
+          // Pairing sonrasi - 10sn bekle (kullanici kodu girsin), sonra reconnect
           pairingMode = false;
+          setTimeout(function() { connect(); }, 10000);
           return;
         }
         var statusCode = update.lastDisconnect && update.lastDisconnect.error && update.lastDisconnect.error.output ? update.lastDisconnect.error.output.statusCode : null;
         send('status', { connected: false });
-        if (statusCode !== DisconnectReason.loggedOut) {
+        if (statusCode !== 401 && statusCode !== 403) {
           setTimeout(function() { connect(); }, 5000);
         } else {
           send('logged_out', {});
