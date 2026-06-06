@@ -39,7 +39,7 @@ jobs:
           node scripts/install.js || true
 
       - name: Install Node.js project dependencies
-        run: cd nodejs-assets/nodejs-project && npm install --ignore-scripts
+        run: echo "no deps needed for test"
 
       - name: Create assets dir
         run: mkdir -p android/app/src/main/assets

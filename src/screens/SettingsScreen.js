@@ -134,7 +134,8 @@ const SettingsScreen = () => {
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>ℹ️ Hakkında</Text>
         <Text style={styles.info}>WhatsApp Grup Yönetici v1.0</Text>
-        <Text style={styles.info}>Baileys + React Native + Background Service</Text>
+        <Text style={styles.info}>By KuZGuN</Text>
+        <Text style={styles.info}>WP İletişim: 0539 681 47 93</Text>
         <Text style={styles.info}>Telefonda çalışır - PC gerekmez</Text>
         <Text style={styles.info}>WhatsApp açık olmadan arka planda çalışır</Text>
       </View>
