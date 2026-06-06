@@ -34,7 +34,7 @@ jobs:
         run: npm install --ignore-scripts
 
       - name: Install Node.js project dependencies
-        run: cd nodejs-assets/nodejs-project && npm install --ignore-engines
+        run: cd nodejs-assets/nodejs-project && npm install --ignore-scripts
 
       - name: Make gradlew executable
         run: chmod +x android/gradlew
