@@ -75,7 +75,7 @@ async function connect(phoneNumber) {
           var code = await sock.requestPairingCode(phoneNumber);
           send('pairing_code', { code: code });
         } catch(e) { send('error', { message: 'Pairing code hatasi: ' + e.message }); }
-      }, 5000);
+      }, 3000);
     }
 
     sock.ev.on('creds.update', authState.saveCreds);
@@ -83,8 +83,13 @@ async function connect(phoneNumber) {
     sock.ev.on('connection.update', function(update) {
       if (update.connection === 'close') {
         isReady = false;
-        send('status', { connected: false });
         var code = update.lastDisconnect && update.lastDisconnect.error && update.lastDisconnect.error.output ? update.lastDisconnect.error.output.statusCode : null;
+        // Pairing sureci devam ediyorsa reconnect yapma
+        if (code === 405 || code === 515) {
+          // Pairing icin normal kapanis, bekle
+          return;
+        }
+        send('status', { connected: false });
         if (code !== DisconnectReason.loggedOut) {
           setTimeout(function() { connect(); }, 5000);
         } else {
