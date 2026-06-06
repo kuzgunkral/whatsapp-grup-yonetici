@@ -11,6 +11,7 @@ import {
   ScrollView,
   TextInput,
   Alert,
+  Clipboard,
 } from 'react-native';
 import botBridge from '../services/BotBridge';
 import backgroundService from '../services/BackgroundService';
@@ -109,12 +110,14 @@ const HomeScreen = () => {
           // Pairing Code göster
           <View style={styles.pairingContainer}>
             <Text style={styles.pairingTitle}>📱 Eşleştirme Kodu</Text>
-            <Text style={styles.pairingCode}>{pairingCode}</Text>
+            <TouchableOpacity onLongPress={() => { Clipboard.setString(pairingCode); Alert.alert('Kopyalandı', pairingCode); }}>
+              <Text style={styles.pairingCode}>{pairingCode}</Text>
+            </TouchableOpacity>
             <Text style={styles.pairingHint}>
-              WhatsApp'ı aç → ⋮ Menü → Bağlı Cihazlar → Cihaz Bağla → Telefon Numarasıyla Bağla
+              Kodu kopyalamak için basılı tut
             </Text>
-            <Text style={styles.pairingStep}>
-              Yukarıdaki kodu oraya gir, bitti ✓
+            <Text style={styles.pairingHint}>
+              WhatsApp → Bağlı Cihazlar → Cihaz Bağla → Telefon Numarasıyla Bağla
             </Text>
             <TouchableOpacity
               style={styles.retryBtn}
