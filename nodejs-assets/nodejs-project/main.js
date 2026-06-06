@@ -5,17 +5,13 @@ var crypto = require('crypto');
 
 // crypto polyfill for Baileys
 if (!globalThis.crypto) {
-  globalThis.crypto = crypto;
-}
-if (!globalThis.crypto.subtle) {
-  globalThis.crypto.subtle = crypto.webcrypto ? crypto.webcrypto.subtle : undefined;
-}
-if (!globalThis.crypto.subtle) {
-  // Fallback: use crypto.webcrypto
-  try {
-    var webcrypto = require('crypto').webcrypto;
-    globalThis.crypto = webcrypto;
-  } catch(e) {}
+  if (crypto.webcrypto) {
+    globalThis.crypto = crypto.webcrypto;
+  } else {
+    globalThis.crypto = crypto;
+  }
+} else if (!globalThis.crypto.subtle && crypto.webcrypto) {
+  globalThis.crypto = crypto.webcrypto;
 }
 
 var sock = null;
