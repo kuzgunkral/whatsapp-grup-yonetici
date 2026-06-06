@@ -37,7 +37,9 @@ jobs:
         run: cd nodejs-assets/nodejs-project && npm install --ignore-scripts
 
       - name: Bundle JS
-        run: npx react-native bundle --platform android --dev false --entry-file index.js --bundle-output android/app/src/main/assets/index.android.bundle --assets-dest android/app/src/main/res
+        run: |
+          mkdir -p android/app/src/main/assets
+          npx react-native bundle --platform android --dev false --entry-file index.js --bundle-output android/app/src/main/assets/index.android.bundle --assets-dest android/app/src/main/res
 
       - name: Make gradlew executable
         run: chmod +x android/gradlew
