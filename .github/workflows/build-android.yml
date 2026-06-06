@@ -25,7 +25,10 @@ jobs:
         uses: android-actions/setup-android@v3
 
       - name: Install NDK
-        run: sdkmanager "ndk;24.0.8215888"
+        run: |
+          sdkmanager "ndk;24.0.8215888"
+          echo "ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/24.0.8215888" >> $GITHUB_ENV
+          echo "ndk.dir=$ANDROID_SDK_ROOT/ndk/24.0.8215888" >> android/local.properties
 
       - name: Install dependencies
         run: npm install --ignore-scripts
@@ -37,8 +40,6 @@ jobs:
         run: chmod +x android/gradlew
 
       - name: Build APK
-        env:
-          ANDROID_NDK_HOME: /usr/local/lib/android/sdk/ndk/24.0.8215888
         run: cd android && ./gradlew assembleDebug
 
       - name: Upload APK
