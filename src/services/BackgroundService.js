@@ -5,7 +5,6 @@
  */
 
 import BackgroundService from 'react-native-background-actions';
-import nodejs from 'nodejs-mobile-react-native';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 

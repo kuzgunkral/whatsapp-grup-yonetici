@@ -1,34 +1,4 @@
 {
-  "expo": {
-    "name": "WhatsApp Grup Yönetici",
-    "slug": "whatsapp-grup-yonetici",
-    "version": "1.0.0",
-    "orientation": "portrait",
-    "icon": "./assets/icon.png",
-    "userInterfaceStyle": "dark",
-    "splash": {
-      "backgroundColor": "#111b21"
-    },
-    "android": {
-      "adaptiveIcon": {
-        "backgroundColor": "#111b21"
-      },
-      "package": "com.whatsappgrupyonetici",
-      "permissions": [
-        "INTERNET",
-        "FOREGROUND_SERVICE",
-        "WAKE_LOCK",
-        "RECEIVE_BOOT_COMPLETED",
-        "POST_NOTIFICATIONS"
-      ]
-    },
-    "ios": {
-      "bundleIdentifier": "com.whatsappgrupyonetici",
-      "supportsTablet": false
-    },
-    "plugins": [
-      "expo-background-fetch",
-      "expo-task-manager"
-    ]
-  }
+  "name": "WhatsAppGrupYonetici",
+  "displayName": "WhatsApp Grup Yönetici"
 }
