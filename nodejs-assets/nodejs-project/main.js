@@ -61,7 +61,7 @@ async function connect(phoneNumber) {
       auth: { creds: authState.state.creds, keys: makeCacheableSignalKeyStore(authState.state.keys, pino({ level: 'silent' })) },
       printQRInTerminal: false,
       logger: pino({ level: 'silent' }),
-      browser: ['WhatsApp Grup Yonetici', 'Android', '1.0.0'],
+      browser: ['Chrome', 'Desktop', '131.0.0'],
       syncFullHistory: false,
     });
 
