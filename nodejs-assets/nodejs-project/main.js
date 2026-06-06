@@ -69,7 +69,10 @@ async function connect(phoneNumber) {
       syncFullHistory: false,
     });
 
+    var pairingMode = false;
+
     if (!authState.state.creds.registered && phoneNumber) {
+      pairingMode = true;
       setTimeout(async function() {
         try {
           var code = await sock.requestPairingCode(phoneNumber);
@@ -83,10 +86,10 @@ async function connect(phoneNumber) {
     sock.ev.on('connection.update', function(update) {
       if (update.connection === 'close') {
         isReady = false;
-        var code = update.lastDisconnect && update.lastDisconnect.error && update.lastDisconnect.error.output ? update.lastDisconnect.error.output.statusCode : null;
-        // Pairing sureci devam ediyorsa reconnect yapma
-        if (code === 405 || code === 515) {
-          // Pairing icin normal kapanis, bekle
+        if (pairingMode) {
+          // Pairing sureci - reconnect et ama yeni kod uretme
+          pairingMode = false;
+          setTimeout(function() { connect(); }, 3000);
           return;
         }
         send('status', { connected: false });
@@ -224,7 +227,10 @@ rn_bridge.channel.on('message', function(raw) {
   try {
     var msg = JSON.parse(raw);
     switch(msg.action) {
-      case 'connect': connect(msg.data.phoneNumber); break;
+      case 'connect': 
+        var num = (msg.data.phoneNumber || '').replace(/[^0-9]/g, '');
+        connect(num); 
+        break;
       case 'get_status': send('status', { connected: isReady, stats: stats, groups: connectedGroups }); break;
       case 'set_active_group': activeGroupId = msg.data.groupId || null; break;
       case 'send_rules':
