@@ -70,14 +70,12 @@ async function connect(phoneNumber) {
     });
 
     if (!authState.state.creds.registered && phoneNumber) {
-      sock.ev.on('connection.update', async function(u) {
-        if (u.connection === 'open' || u.qr) {
-          try {
-            var code = await sock.requestPairingCode(phoneNumber);
-            send('pairing_code', { code: code });
-          } catch(e) { send('error', { message: 'Pairing code hatasi: ' + e.message }); }
-        }
-      });
+      setTimeout(async function() {
+        try {
+          var code = await sock.requestPairingCode(phoneNumber);
+          send('pairing_code', { code: code });
+        } catch(e) { send('error', { message: 'Pairing code hatasi: ' + e.message }); }
+      }, 5000);
     }
 
     sock.ev.on('creds.update', authState.saveCreds);
