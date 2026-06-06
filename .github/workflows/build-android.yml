@@ -26,9 +26,9 @@ jobs:
 
       - name: Install NDK
         run: |
-          sdkmanager "ndk;24.0.8215888"
-          echo "ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/24.0.8215888" >> $GITHUB_ENV
-          echo "ndk.dir=$ANDROID_SDK_ROOT/ndk/24.0.8215888" >> android/local.properties
+          sdkmanager "ndk;25.1.8937393"
+          echo "ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/25.1.8937393" >> $GITHUB_ENV
+          echo "ndk.dir=$ANDROID_SDK_ROOT/ndk/25.1.8937393" >> android/local.properties
 
       - name: Install dependencies
         run: npm install --ignore-scripts
