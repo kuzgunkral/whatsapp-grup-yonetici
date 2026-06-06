@@ -1,13 +1,7 @@
-/**
- * WhatsApp Grup Yönetici - Tek APK, Telefonda Çalışır
- * Baileys engine telefonda gömülü, WhatsApp açık olmadan çalışır.
- */
-
-import React, { useEffect } from 'react';
-import { StatusBar, LogBox } from 'react-native';
+import React from 'react';
+import { StatusBar, LogBox, Text } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { Text } from 'react-native';
 
 import HomeScreen from './src/screens/HomeScreen';
 import ModerationScreen from './src/screens/ModerationScreen';
@@ -15,21 +9,11 @@ import MessagesScreen from './src/screens/MessagesScreen';
 import LogsScreen from './src/screens/LogsScreen';
 import SettingsScreen from './src/screens/SettingsScreen';
 
-import botBridge from './src/services/BotBridge';
-import backgroundService from './src/services/BackgroundService';
-
-LogBox.ignoreLogs(['Require cycle', 'EventEmitter']);
+LogBox.ignoreAllLogs();
 
 const Tab = createBottomTabNavigator();
 
 const App = () => {
-  useEffect(() => {
-    // Node.js engine + bridge başlat
-    botBridge.init();
-    // Arka plan servisi başlat
-    backgroundService.start();
-  }, []);
-
   return (
     <NavigationContainer
       theme={{

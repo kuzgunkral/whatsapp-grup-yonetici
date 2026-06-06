@@ -58,7 +58,6 @@ const HomeScreen = () => {
     botBridge.on('logged_out', onLoggedOut);
 
     // Durum sor
-    botBridge.getStatus();
     setIsServiceRunning(backgroundService.isRunning);
 
     return () => {
@@ -75,7 +74,10 @@ const HomeScreen = () => {
       Alert.alert('Uyarı', 'Telefon numaranızı girin (başında ülke kodu ile)');
       return;
     }
-    // Numarayı temizle
+    // Engine'i başlat ve bağlan
+    try {
+      botBridge.init();
+    } catch(e) {}
     const clean = phoneNumber.replace(/[^0-9]/g, '');
     botBridge.connect(clean);
   };
