@@ -46,7 +46,7 @@ async function connect(phoneNumber) {
     loadConfig();
     if (!fs.existsSync(AUTH_DIR)) fs.mkdirSync(AUTH_DIR, { recursive: true });
 
-    var baileys = await import('@whiskeysockets/baileys');
+    var baileys = await import('baileys');
     var makeWASocket = baileys.default;
     var useMultiFileAuthState = baileys.useMultiFileAuthState;
     var DisconnectReason = baileys.DisconnectReason;
