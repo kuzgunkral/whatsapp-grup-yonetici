@@ -24,8 +24,11 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
+      - name: Install NDK
+        run: sdkmanager "ndk;24.0.8215888"
+
       - name: Install dependencies
-        run: npm install
+        run: npm install --ignore-scripts
 
       - name: Install Node.js project dependencies
         run: cd nodejs-assets/nodejs-project && npm install
@@ -34,6 +37,8 @@ jobs:
         run: chmod +x android/gradlew
 
       - name: Build APK
+        env:
+          ANDROID_NDK_HOME: /usr/local/lib/android/sdk/ndk/24.0.8215888
         run: cd android && ./gradlew assembleDebug
 
       - name: Upload APK
