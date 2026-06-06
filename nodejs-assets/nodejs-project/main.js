@@ -1,6 +1,22 @@
 var rn_bridge = require('rn-bridge');
 var path = require('path');
 var fs = require('fs');
+var crypto = require('crypto');
+
+// crypto polyfill for Baileys
+if (!globalThis.crypto) {
+  globalThis.crypto = crypto;
+}
+if (!globalThis.crypto.subtle) {
+  globalThis.crypto.subtle = crypto.webcrypto ? crypto.webcrypto.subtle : undefined;
+}
+if (!globalThis.crypto.subtle) {
+  // Fallback: use crypto.webcrypto
+  try {
+    var webcrypto = require('crypto').webcrypto;
+    globalThis.crypto = webcrypto;
+  } catch(e) {}
+}
 
 var sock = null;
 var isReady = false;
