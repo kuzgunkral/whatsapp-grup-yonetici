@@ -22,7 +22,7 @@ let botStartTime = 0;
 let connectedGroups = [];
 let activeGroupId = null;
 // Restart'ta aktif grubu dosyadan oku
-try { const saved = fs.readFileSync('./active-group.txt', 'utf8').trim(); if (saved) activeGroupId = saved; } catch(e) {}
+try { const saved = fs.readFileSync(ACTIVE_GROUP_FILE, 'utf8').trim(); if (saved) activeGroupId = saved; } catch(e) {}
 let spamTracker = {};
 let pausedGroups = new Set();
 let mutedUsers = new Set();
@@ -35,9 +35,10 @@ let config = { automation: { welcome: true, noPrice: true, rules: true }, delete
 let currentQR = null;
 let currentPairingCode = null;
 
-const AUTH_DIR = './baileys-auth';
-const LOG_FILE = './deleted-ads-log.json';
-const CONFIG_FILE = './bot-config.json';
+const AUTH_DIR = process.env.DATA_DIR ? path.join(process.env.DATA_DIR, 'baileys-auth') : './baileys-auth';
+const LOG_FILE = process.env.DATA_DIR ? path.join(process.env.DATA_DIR, 'deleted-ads-log.json') : './deleted-ads-log.json';
+const CONFIG_FILE = process.env.DATA_DIR ? path.join(process.env.DATA_DIR, 'bot-config.json') : './bot-config.json';
+const ACTIVE_GROUP_FILE = process.env.DATA_DIR ? path.join(process.env.DATA_DIR, 'active-group.txt') : './active-group.txt';
 
 function loadDeletedLog() { try { if (fs.existsSync(LOG_FILE)) deletedAdsLog = JSON.parse(fs.readFileSync(LOG_FILE, 'utf8')); } catch(e) {} }
 function saveDeletedLog() { try { fs.writeFileSync(LOG_FILE, JSON.stringify(deletedAdsLog), 'utf8'); } catch(e) {} }
