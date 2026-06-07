@@ -67,8 +67,11 @@ async function connect(phoneNumber) {
       auth: { creds: authState.state.creds, keys: makeCacheableSignalKeyStore(authState.state.keys, pino({ level: 'silent' })) },
       printQRInTerminal: false,
       logger: pino({ level: 'silent' }),
-      browser: ['Chrome', 'Desktop', '131.0.0'],
+      browser: ['Chrome (Linux)', 'Chrome', '131.0.6778.204'],
       syncFullHistory: false,
+      connectTimeoutMs: 60000,
+      keepAliveIntervalMs: 30000,
+      retryRequestDelayMs: 2000,
     });
 
     var pairingMode = false;
@@ -81,7 +84,7 @@ async function connect(phoneNumber) {
           var code = await sock.requestPairingCode(phoneNumber);
           send('pairing_code', { code: code });
         } catch(e) { send('error', { message: 'Pairing code hatasi: ' + e.message }); }
-      }, 5000);
+      }, 8000);
     }
 
     sock.ev.on('creds.update', authState.saveCreds);
@@ -97,7 +100,8 @@ async function connect(phoneNumber) {
         }
         
         if (pairingMode) {
-          // Pairing sonrasi - kullanici kodu girdi, yeniden baglan (numara olmadan)
+          // Pairing modunda bağlantı düşerse - normal, kullanıcı kodu girecek
+          // Reconnect et ki WhatsApp kodu doğrulayabilsin
           pairingMode = false;
           send('status', { connected: false });
           setTimeout(function() { connect(); }, 3000);
