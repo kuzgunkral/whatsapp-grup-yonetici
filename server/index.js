@@ -225,8 +225,8 @@ async function handleMessage(msg) {
       spamTracker[userId].count++;
       spamTracker[userId].lastTime = now;
 
-      // Fiyatlı ise limit yok
-      if (hasFiyat) {
+      // Fiyatlı ise limit yok (caption'da veya daha önce fiyat verdiyse)
+      if (hasFiyat || spamTracker[userId].hasPaid) {
         spamTracker[userId].hasPaid = true;
         spamTracker[userId].paidTime = Date.now();
         return;
