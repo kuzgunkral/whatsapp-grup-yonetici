@@ -43,6 +43,12 @@ function saveConfig() { try { fs.writeFileSync(CONFIG_FILE, JSON.stringify(confi
 
 async function connect(phoneNumber) {
   try {
+    // Eski bağlantıyı kapat
+    if (sock) {
+      try { sock.end(); } catch(e) {}
+      sock = null;
+    }
+
     loadDeletedLog();
     loadConfig();
     if (!fs.existsSync(AUTH_DIR)) fs.mkdirSync(AUTH_DIR, { recursive: true });
@@ -401,5 +407,11 @@ io.on('connection', (socket) => {
 const PORT = process.env.PORT || 3001;
 server.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
-  connect();
+  // Eğer daha önce kayıtlı session varsa otomatik bağlan
+  if (fs.existsSync(path.join(AUTH_DIR, 'creds.json'))) {
+    console.log('Kayıtlı oturum bulundu, otomatik bağlanılıyor...');
+    connect();
+  } else {
+    console.log('Oturum yok, panel üzerinden bağlantı bekleniyor...');
+  }
 });
