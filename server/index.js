@@ -225,22 +225,31 @@ async function handleMessage(msg) {
       spamTracker[userId].count++;
       spamTracker[userId].lastTime = now;
 
-      if (spamTracker[userId].count > 9 && spamTracker[userId].hasPaid) {
-        // 10 limit - fiyatli resmi silme (caption'da fiyat varsa geç)
-        if (hasFiyat) {
-          // Fiyatli - dokunma
-        } else {
-          if (!spamTracker[userId].warned10) {
-            try { await sock.sendMessage(userId, { text: `⚠️ 10 adetten fazla resim yüklenemez.\n\n🛡️ _Grup Yönetimi_` }); } catch(e) {}
-            spamTracker[userId].warned10 = true;
-          }
-          const delKey = msg.key;
-          const tryDel = async (a) => { try { await sock.sendMessage(chatId, { delete: delKey }); } catch(e) { if (a < 20) setTimeout(() => tryDel(a+1), 3000); } };
-          tryDel(1);
-          stats.messagesDeleted++;
-          return;
+      // Fiyat varsa hasPaid işaretle
+      if (hasFiyat) { spamTracker[userId].hasPaid = true; spamTracker[userId].paidTime = Date.now(); }
+
+      // 10'dan fazla → sil + 1 kere DM uyarı
+      if (spamTracker[userId].count > 10) {
+        if (!spamTracker[userId].warned10) {
+          try { await sock.sendMessage(userId, { text: `⚠️ 10 adetten fazla resim yüklenemez.\n\n🛡️ _Grup Yönetimi_` }); } catch(e) {}
+          spamTracker[userId].warned10 = true;
         }
+        const delKey = msg.key;
+        const tryDel = async (a) => { try { await sock.sendMessage(chatId, { delete: delKey }); } catch(e) { if (a < 20) setTimeout(() => tryDel(a+1), 3000); } };
+        tryDel(1);
+        stats.messagesDeleted++;
+        return;
       }
+
+      // Fiyatlı (veya toplu fiyatlı) → geç
+      if (spamTracker[userId].hasPaid) return;
+
+      // Fiyatsız resim → sessiz sil (uyarı yok, sadece sil)
+      const delKey = msg.key;
+      const tryDel = async (a) => { try { await sock.sendMessage(chatId, { delete: delKey }); } catch(e) { if (a < 20) setTimeout(() => tryDel(a+1), 3000); } };
+      tryDel(1);
+      stats.messagesDeleted++;
+      return;
     }
 
     // === FIYAT VARSA MUAF ===
