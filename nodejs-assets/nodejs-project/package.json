@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "main": "main.js",
   "dependencies": {
-    "baileys": "6.5.0",
+    "baileys": "6.7.9",
     "pino": "^8.17.2"
   }
 }
