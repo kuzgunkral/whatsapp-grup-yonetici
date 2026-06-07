@@ -7,6 +7,10 @@ const QRCode = require('qrcode');
 const pino = require('pino');
 const fs = require('fs');
 const path = require('path');
+const { SocksProxyAgent } = require('socks-proxy-agent');
+
+// WARP SOCKS5 proxy (localhost:1080)
+const proxyAgent = process.env.USE_PROXY ? new SocksProxyAgent('socks5://127.0.0.1:1080') : undefined;
 
 const app = express();
 app.use(cors());
@@ -66,6 +70,8 @@ async function connect(phoneNumber) {
       connectTimeoutMs: 60000,
       defaultQueryTimeoutMs: 60000,
       retryRequestDelayMs: 2000,
+      agent: proxyAgent,
+      fetchAgent: proxyAgent,
     });
 
     debugLog('Socket created, requesting pairing code...');
@@ -427,7 +433,7 @@ io.on('connection', (socket) => {
 
 // Start
 const PORT = process.env.PORT || 3001;
-server.listen(PORT, () => {
+server.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running on port ${PORT}`);
   // Eğer daha önce kayıtlı session varsa otomatik bağlan
   if (fs.existsSync(path.join(AUTH_DIR, 'creds.json'))) {
