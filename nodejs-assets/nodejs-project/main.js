@@ -72,11 +72,12 @@ async function connect(phoneNumber) {
       auth: { creds: authState.state.creds, keys: makeCacheableSignalKeyStore(authState.state.keys, pino({ level: 'silent' })) },
       printQRInTerminal: false,
       logger: pino({ level: 'silent' }),
-      browser: ['Chrome (Linux)', 'Chrome', '131.0.6778.204'],
+      browser: ['Ubuntu', 'Chrome', '20.0.04'],
       syncFullHistory: false,
       connectTimeoutMs: 60000,
       keepAliveIntervalMs: 30000,
-      retryRequestDelayMs: 2000,
+      markOnlineOnConnect: false,
+      generateHighQualityLinkPreview: false,
     });
 
     var pairingMode = false;
