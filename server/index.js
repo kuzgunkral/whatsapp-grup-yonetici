@@ -49,46 +49,56 @@ async function connect(phoneNumber) {
       sock = null;
     }
 
+    debugLog('connect() called with phone: ' + (phoneNumber || 'none'));
+
     loadDeletedLog();
     loadConfig();
     if (!fs.existsSync(AUTH_DIR)) fs.mkdirSync(AUTH_DIR, { recursive: true });
 
     const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
+    debugLog('Auth state loaded, registered: ' + state.creds.registered);
 
     sock = makeWASocket({
       auth: { creds: state.creds, keys: makeCacheableSignalKeyStore(state.keys, pino({ level: 'silent' })) },
-      printQRInTerminal: true,
+      printQRInTerminal: false,
       logger: pino({ level: 'silent' }),
       browser: ['WhatsApp Grup Yonetici', 'Chrome', '131.0.0'],
     });
+
+    debugLog('Socket created, requesting pairing code...');
 
     // QR veya Pairing Code
     if (!state.creds.registered && phoneNumber) {
       setTimeout(async () => {
         try {
+          debugLog('Requesting pairing code for: ' + phoneNumber);
           const code = await sock.requestPairingCode(phoneNumber);
           currentPairingCode = code;
           io.emit('pairing_code', code);
-          console.log('Pairing Code:', code);
-        } catch(e) { console.log('Pairing error:', e.message); }
-      }, 3000);
+          debugLog('Pairing Code generated: ' + code);
+        } catch(e) { debugLog('Pairing error: ' + e.message); }
+      }, 5000);
+    } else {
+      debugLog('Skipped pairing: registered=' + state.creds.registered + ' phone=' + phoneNumber);
     }
 
     sock.ev.on('creds.update', saveCreds);
 
     sock.ev.on('connection.update', (update) => {
       const { connection, lastDisconnect, qr } = update;
+      debugLog('connection.update: ' + JSON.stringify({ connection, qr: !!qr, lastDisconnect: lastDisconnect?.error?.message }));
 
       if (qr) {
         currentQR = qr;
         io.emit('qr', qr);
-        console.log('QR code generated');
+        debugLog('QR code generated');
       }
 
       if (connection === 'close') {
         isReady = false;
         io.emit('status', { connected: false });
         const code = lastDisconnect?.error?.output?.statusCode;
+        debugLog('Connection closed, statusCode: ' + code);
         if (code !== 401 && code !== 403) {
           setTimeout(() => connect(), 5000);
         }
@@ -101,7 +111,7 @@ async function connect(phoneNumber) {
         botStartTime = Math.floor(Date.now() / 1000);
         io.emit('status', { connected: true });
         loadGroups();
-        console.log('WhatsApp connected!');
+        debugLog('WhatsApp connected!');
       }
     });
 
@@ -229,9 +239,15 @@ app.get('/api/status', (req, res) => {
 
 app.post('/api/connect', (req, res) => {
   const { phoneNumber } = req.body;
+  console.log('Connect request received, phone:', phoneNumber);
   connect(phoneNumber);
-  res.json({ success: true });
+  res.json({ success: true, message: 'Bağlantı başlatıldı, pairing code bekleniyor...' });
 });
+
+// Debug endpoint
+let debugLogs = [];
+function debugLog(msg) { console.log(msg); debugLogs.push({ time: new Date().toISOString(), msg }); if (debugLogs.length > 50) debugLogs.shift(); }
+app.get('/api/debug', (req, res) => { res.json(debugLogs); });
 
 app.get('/api/qr', async (req, res) => {
   if (isReady) return res.json({ connected: true });
