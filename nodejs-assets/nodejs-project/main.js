@@ -54,7 +54,14 @@ async function connect(phoneNumber) {
     
     // Eğer telefon numarası verilmişse VE kayıtlı session yoksa, eski auth'u temizle
     if (phoneNumber) {
-      try { fs.rmSync(AUTH_DIR, { recursive: true, force: true }); fs.mkdirSync(AUTH_DIR, { recursive: true }); } catch(e) {}
+      try {
+        if (fs.existsSync(AUTH_DIR)) {
+          var files = fs.readdirSync(AUTH_DIR);
+          for (var i = 0; i < files.length; i++) {
+            fs.unlinkSync(path.join(AUTH_DIR, files[i]));
+          }
+        }
+      } catch(e) {}
     }
 
     var baileys = await import('baileys');
@@ -112,7 +119,14 @@ async function connect(phoneNumber) {
         // 401 = logged out, silinen session
         if (statusCode === 401) {
           // Auth dosyalarını sil ve tekrar pair iste
-          try { fs.rmSync(AUTH_DIR, { recursive: true, force: true }); } catch(e) {}
+          try {
+            if (fs.existsSync(AUTH_DIR)) {
+              var files = fs.readdirSync(AUTH_DIR);
+              for (var i = 0; i < files.length; i++) {
+                fs.unlinkSync(path.join(AUTH_DIR, files[i]));
+              }
+            }
+          } catch(e) {}
           send('logged_out', {});
           return;
         }
