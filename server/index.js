@@ -287,27 +287,41 @@ async function handleMessage(msg) {
     }
 
     // === FIYATSIZ İLAN KESİNLEŞTİ ===
+
+    // Reklam muafiyeti kontrolü
+    if (reklamMuafMsgIds.has(msg.key.id)) {
+      reklamMuafMsgIds.delete(msg.key.id);
+      return;
+    }
+
     if (!noPriceCounter[userId]) noPriceCounter[userId] = { warned: false, warnedTime: 0 };
     const quota = noPriceCounter[userId];
     if (Date.now() - quota.warnedTime > 15 * 60 * 1000) quota.warned = false;
 
-    // 2. kez (15dk içinde): sessiz sil
+    // 2. kez (15dk içinde): sessiz sil + logla
     if (quota.warned) {
       try { await sock.sendMessage(chatId, { delete: msg.key }); } catch(e) {}
       stats.messagesDeleted++;
+      const logEntry = { id: Date.now().toString(), tarih: new Date().toLocaleDateString('tr-TR'), saat: new Date().toLocaleTimeString('tr-TR'), kullanici: userId.split('@')[0], grup: groupName, grupId: chatId, mesaj: msgText || '(Resimli ilan)', sebep: 'Fiyatsız ilan (sessiz)' };
+      deletedAdsLog.unshift(logEntry);
+      saveDeletedLog();
       io.emit('log', { type: 'deleted', user: userId.split('@')[0], group: groupName });
       return;
     }
 
-    // 1. kez: uyar + 1dk sonra sil
+    // 1. kez: uyar + 1dk sonra sil + logla
     quota.warned = true;
     quota.warnedTime = Date.now();
     await sock.sendMessage(chatId, { text: `⚠️ İlanınıza fiyat girmediniz. 1 dakika içerisinde silinecektir.\nLütfen fiyat girerek tekrar gönderiniz.\n\n🛡️ _${groupName} Yönetimi_` });
 
     const msgKey = msg.key;
+    const msgTextLog = msgText;
     setTimeout(async () => {
       try { await sock.sendMessage(chatId, { delete: msgKey }); } catch(e) {}
       stats.messagesDeleted++;
+      const logEntry = { id: Date.now().toString(), tarih: new Date().toLocaleDateString('tr-TR'), saat: new Date().toLocaleTimeString('tr-TR'), kullanici: userId.split('@')[0], grup: groupName, grupId: chatId, mesaj: msgTextLog || '(Resimli ilan)', sebep: 'Fiyatsız ilan (otomatik)' };
+      deletedAdsLog.unshift(logEntry);
+      saveDeletedLog();
       io.emit('log', { type: 'deleted', user: userId.split('@')[0], group: groupName });
     }, config.deleteDelay);
 
