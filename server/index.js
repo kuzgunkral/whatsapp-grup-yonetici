@@ -1,4 +1,3 @@
-const { default: makeWASocket, useMultiFileAuthState, makeCacheableSignalKeyStore, DisconnectReason } = require('@whiskeysockets/baileys');
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
@@ -7,10 +6,8 @@ const QRCode = require('qrcode');
 const pino = require('pino');
 const fs = require('fs');
 const path = require('path');
-const { SocksProxyAgent } = require('socks-proxy-agent');
 
-// WARP SOCKS5 proxy (localhost:1080)
-const proxyAgent = process.env.USE_PROXY ? new SocksProxyAgent('socks5://127.0.0.1:1080') : undefined;
+let makeWASocket, useMultiFileAuthState, makeCacheableSignalKeyStore;
 
 const app = express();
 app.use(cors());
@@ -47,6 +44,14 @@ function saveConfig() { try { fs.writeFileSync(CONFIG_FILE, JSON.stringify(confi
 
 async function connect(phoneNumber) {
   try {
+    // Baileys'i dynamic import et (ESM modül)
+    if (!makeWASocket) {
+      const baileys = await import('baileys');
+      makeWASocket = baileys.makeWASocket;
+      useMultiFileAuthState = baileys.useMultiFileAuthState;
+      makeCacheableSignalKeyStore = baileys.makeCacheableSignalKeyStore;
+    }
+
     // Eski bağlantıyı kapat
     if (sock) {
       try { sock.end(); } catch(e) {}
@@ -68,10 +73,8 @@ async function connect(phoneNumber) {
       logger: pino({ level: 'silent' }),
       browser: ['Ubuntu', 'Chrome', '20.0.04'],
       connectTimeoutMs: 60000,
-      defaultQueryTimeoutMs: 60000,
-      retryRequestDelayMs: 2000,
-      agent: proxyAgent,
-      fetchAgent: proxyAgent,
+      keepAliveIntervalMs: 30000,
+      markOnlineOnConnect: false,
     });
 
     debugLog('Socket created, requesting pairing code...');
