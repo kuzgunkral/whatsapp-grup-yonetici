@@ -217,22 +217,21 @@ async function handleMessage(msg) {
       /(fiyat|tane|adet)\s*:?\s*\d+[\.,]?\d*|\d+[\.,]?\d*\s*(fiyat|tane|adet)/i.test(msgText) ||
       ((/\d{5,}/.test(msgText) || /\d{1,3}[\.,]\d{3}/.test(msgText)) && !/km/i.test(msgText));
 
-    // === 10 RESİM LİMİTİ (sadece fiyatsız) ===
+    // === 10 RESİM LİMİTİ (herkese, fiyatlı fiyatsız fark etmez) ===
     if (hasMedia) {
       if (!spamTracker[userId]) spamTracker[userId] = { count: 0, lastTime: 0, warned10: false, hasPaid: false, paidTime: 0, ozelUyari: false };
       const now = Date.now();
-      if (now - spamTracker[userId].lastTime > 10000) { spamTracker[userId].count = 0; spamTracker[userId].warned10 = false; spamTracker[userId].hasPaid = false; spamTracker[userId].ozelUyari = false; }
+      if (now - spamTracker[userId].lastTime > 30000) { spamTracker[userId].count = 0; spamTracker[userId].warned10 = false; spamTracker[userId].hasPaid = false; spamTracker[userId].ozelUyari = false; }
       spamTracker[userId].count++;
       spamTracker[userId].lastTime = now;
 
-      // Fiyatlı ise limit yok (caption'da veya daha önce fiyat verdiyse)
-      if (hasFiyat || spamTracker[userId].hasPaid) {
+      // Fiyatlı ise hasPaid işaretle
+      if (hasFiyat) {
         spamTracker[userId].hasPaid = true;
         spamTracker[userId].paidTime = Date.now();
-        return;
       }
 
-      // Fiyatsız ve 10'dan fazla → sil (retry 20 kez, 3sn aralık)
+      // 10'dan fazla → sil + uyar (fiyatlı fiyatsız fark etmez)
       if (spamTracker[userId].count > 10) {
         if (!spamTracker[userId].warned10) {
           await sock.sendMessage(chatId, { text: `⚠️ 10 adetten fazla resim yüklenemez.\n🛡️ _Grup Yönetimi_` });
@@ -244,6 +243,9 @@ async function handleMessage(msg) {
         stats.messagesDeleted++;
         return;
       }
+
+      // Fiyatlı ve 10 veya altı → geç
+      if (hasFiyat) return;
     }
 
     // === FIYAT VARSA - 1DK'DA 1 İLAN HAKKI ===
