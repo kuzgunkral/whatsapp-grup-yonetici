@@ -55,10 +55,14 @@ async function connect(phoneNumber) {
     // Eğer telefon numarası verilmişse VE kayıtlı session yoksa, eski auth'u temizle
     if (phoneNumber) {
       try {
-        if (fs.existsSync(AUTH_DIR)) {
-          var files = fs.readdirSync(AUTH_DIR);
-          for (var i = 0; i < files.length; i++) {
-            fs.unlinkSync(path.join(AUTH_DIR, files[i]));
+        var credsFile = path.join(AUTH_DIR, 'creds.json');
+        if (fs.existsSync(credsFile)) {
+          var credsData = JSON.parse(fs.readFileSync(credsFile, 'utf8'));
+          if (!credsData.registered) {
+            var files = fs.readdirSync(AUTH_DIR);
+            for (var i = 0; i < files.length; i++) {
+              fs.unlinkSync(path.join(AUTH_DIR, files[i]));
+            }
           }
         }
       } catch(e) {}
