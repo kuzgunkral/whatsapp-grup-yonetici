@@ -247,12 +247,11 @@ async function handleMessage(msg) {
     // === FIYAT VARSA - 1DK'DA 1 İLAN HAKKI ===
     if (hasFiyat) {
       if (!spamTracker[userId]) spamTracker[userId] = { count: 0, lastTime: 0, warned10: false, hasPaid: false, paidTime: 0, ozelUyari: false };
-      // 1dk içinde tekrar ilan atıyorsa sil
+      // 1dk içinde tekrar fiyatlı ilan atıyorsa sil
       if (spamTracker[userId].hasPaid && (Date.now() - spamTracker[userId].paidTime > 5000) && (Date.now() - spamTracker[userId].paidTime < 60000)) {
         try { await sock.sendMessage(chatId, { delete: msg.key }); } catch(e) {}
         if (!spamTracker[userId].ozelUyari) {
           spamTracker[userId].ozelUyari = true;
-          // Özeline uyarı gönder
           try {
             await sock.sendMessage(userId, { text: `⚠️ 1 dakikada 1 ilan atabilirsiniz. Lütfen bekleyiniz.\n\n🛡️ _Grup Yönetimi_` });
           } catch(e) {}
@@ -262,20 +261,6 @@ async function handleMessage(msg) {
       spamTracker[userId].hasPaid = true;
       spamTracker[userId].paidTime = Date.now();
       return;
-    }
-
-    // === 1DK İÇİNDE TEKRAR İLAN (fiyatsız) ===
-    if (spamTracker[userId] && spamTracker[userId].hasPaid) {
-      const sinceLastPaid = Date.now() - spamTracker[userId].paidTime;
-      if (sinceLastPaid < 5000) return; // Toplu resimler muaf
-      if (sinceLastPaid < 60000) {
-        try { await sock.sendMessage(chatId, { delete: msg.key }); } catch(e) {}
-        if (!spamTracker[userId].ozelUyari) {
-          spamTracker[userId].ozelUyari = true;
-          try { await sock.sendMessage(userId, { text: `⚠️ 1 dakikada 1 ilan atabilirsiniz. Lütfen bekleyiniz.\n\n🛡️ _Grup Yönetimi_` }); } catch(e) {}
-        }
-        return;
-      }
     }
 
     // === SORU / SOHBET FİLTRESİ ===
