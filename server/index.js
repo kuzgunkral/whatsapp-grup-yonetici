@@ -217,7 +217,7 @@ async function handleMessage(msg) {
       /(fiyat|tane|adet)\s*:?\s*\d+[\.,]?\d*|\d+[\.,]?\d*\s*(fiyat|tane|adet)/i.test(msgText) ||
       ((/\d{5,}/.test(msgText) || /\d{1,3}[\.,]\d{3}/.test(msgText)) && !/km/i.test(msgText));
 
-    // === 10 RESİM LİMİTİ ===
+    // === 10 RESİM LİMİTİ (sadece fiyatsız) ===
     if (hasMedia) {
       if (!spamTracker[userId]) spamTracker[userId] = { count: 0, lastTime: 0, warned10: false, hasPaid: false, paidTime: 0, ozelUyari: false };
       const now = Date.now();
@@ -225,6 +225,14 @@ async function handleMessage(msg) {
       spamTracker[userId].count++;
       spamTracker[userId].lastTime = now;
 
+      // Fiyatlı ise limit yok
+      if (hasFiyat) {
+        spamTracker[userId].hasPaid = true;
+        spamTracker[userId].paidTime = Date.now();
+        return;
+      }
+
+      // Fiyatsız ve 10'dan fazla → sil
       if (spamTracker[userId].count > 10) {
         if (!spamTracker[userId].warned10) {
           await sock.sendMessage(chatId, { text: `⚠️ 10 adetten fazla resim yüklenemez.\n🛡️ _Grup Yönetimi_` });
