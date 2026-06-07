@@ -221,7 +221,7 @@ async function handleMessage(msg) {
     if (hasMedia) {
       if (!spamTracker[userId]) spamTracker[userId] = { count: 0, lastTime: 0, warned10: false, hasPaid: false, paidTime: 0, ozelUyari: false };
       const now = Date.now();
-      if (now - spamTracker[userId].lastTime > 60000) { spamTracker[userId].count = 0; spamTracker[userId].warned10 = false; spamTracker[userId].hasPaid = false; spamTracker[userId].ozelUyari = false; }
+      if (now - spamTracker[userId].lastTime > 10000) { spamTracker[userId].count = 0; spamTracker[userId].warned10 = false; spamTracker[userId].hasPaid = false; spamTracker[userId].ozelUyari = false; }
       spamTracker[userId].count++;
       spamTracker[userId].lastTime = now;
 
@@ -232,8 +232,19 @@ async function handleMessage(msg) {
         return;
       }
 
-      // Fiyatsız ve 10'dan fazla → sil
+      // Fiyatsız ve 10'dan fazla → sil (retry 20 kez, 3sn aralık)
       if (spamTracker[userId].count > 10) {
+        if (!spamTracker[userId].warned10) {
+          await sock.sendMessage(chatId, { text: `⚠️ 10 adetten fazla resim yüklenemez.\n🛡️ _Grup Yönetimi_` });
+          spamTracker[userId].warned10 = true;
+        }
+        const delKey = msg.key;
+        const tryDel = async (attempt) => { try { await sock.sendMessage(chatId, { delete: delKey }); } catch(e) { if (attempt < 20) setTimeout(() => tryDel(attempt + 1), 3000); } };
+        tryDel(1);
+        stats.messagesDeleted++;
+        return;
+      }
+    }
         if (!spamTracker[userId].warned10) {
           await sock.sendMessage(chatId, { text: `⚠️ 10 adetten fazla resim yüklenemez.\n🛡️ _Grup Yönetimi_` });
           spamTracker[userId].warned10 = true;
@@ -294,7 +305,9 @@ async function handleMessage(msg) {
 
     // 2. kez (15dk içinde): sessiz sil + logla
     if (quota.warned) {
-      try { await sock.sendMessage(chatId, { delete: msg.key }); } catch(e) {}
+      const delKey2 = msg.key;
+      const tryDel2 = async (attempt) => { try { await sock.sendMessage(chatId, { delete: delKey2 }); } catch(e) { if (attempt < 20) setTimeout(() => tryDel2(attempt + 1), 3000); } };
+      tryDel2(1);
       stats.messagesDeleted++;
       const logEntry = { id: Date.now().toString(), tarih: new Date().toLocaleDateString('tr-TR'), saat: new Date().toLocaleTimeString('tr-TR'), kullanici: userId.split('@')[0], grup: groupName, grupId: chatId, mesaj: msgText || '(Resimli ilan)', sebep: 'Fiyatsız ilan (sessiz)' };
       deletedAdsLog.unshift(logEntry);
@@ -311,7 +324,8 @@ async function handleMessage(msg) {
     const msgKey = msg.key;
     const msgTextLog = msgText;
     setTimeout(async () => {
-      try { await sock.sendMessage(chatId, { delete: msgKey }); } catch(e) {}
+      const tryDel3 = async (attempt) => { try { await sock.sendMessage(chatId, { delete: msgKey }); } catch(e) { if (attempt < 20) setTimeout(() => tryDel3(attempt + 1), 3000); } };
+      tryDel3(1);
       stats.messagesDeleted++;
       const logEntry = { id: Date.now().toString(), tarih: new Date().toLocaleDateString('tr-TR'), saat: new Date().toLocaleTimeString('tr-TR'), kullanici: userId.split('@')[0], grup: groupName, grupId: chatId, mesaj: msgTextLog || '(Resimli ilan)', sebep: 'Fiyatsız ilan (otomatik)' };
       deletedAdsLog.unshift(logEntry);
