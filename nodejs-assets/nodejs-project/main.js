@@ -47,7 +47,7 @@ async function connect(phoneNumber) {
     if (!fs.existsSync(AUTH_DIR)) fs.mkdirSync(AUTH_DIR, { recursive: true });
 
     var baileys = await import('baileys');
-    var makeWASocket = baileys.default;
+    var makeWASocket = baileys.makeWASocket || baileys.default;
     var useMultiFileAuthState = baileys.useMultiFileAuthState;
     var DisconnectReason = baileys.DisconnectReason;
     var makeCacheableSignalKeyStore = baileys.makeCacheableSignalKeyStore;
