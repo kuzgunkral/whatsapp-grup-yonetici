@@ -217,51 +217,44 @@ async function handleMessage(msg) {
       /(fiyat|tane|adet)\s*:?\s*\d+[\.,]?\d*|\d+[\.,]?\d*\s*(fiyat|tane|adet)/i.test(msgText) ||
       ((/\d{5,}/.test(msgText) || /\d{1,3}[\.,]\d{3}/.test(msgText)) && !/km/i.test(msgText));
 
-    // === 10 RESİM LİMİTİ (herkese, fiyatlı fiyatsız fark etmez) ===
+    // === 10 RESİM LİMİTİ + 1DK KURAL ===
     if (hasMedia) {
       if (!spamTracker[userId]) spamTracker[userId] = { count: 0, lastTime: 0, warned10: false, hasPaid: false, paidTime: 0, ozelUyari: false };
       const now = Date.now();
-      if (now - spamTracker[userId].lastTime > 30000) { spamTracker[userId].count = 0; spamTracker[userId].warned10 = false; spamTracker[userId].hasPaid = false; spamTracker[userId].ozelUyari = false; }
+      if (now - spamTracker[userId].lastTime > 30000) { spamTracker[userId].count = 0; spamTracker[userId].warned10 = false; spamTracker[userId].ozelUyari = false; }
+      // hasPaid 1dk sonra sıfırla
+      if (spamTracker[userId].hasPaid && now - spamTracker[userId].paidTime > 60000) { spamTracker[userId].hasPaid = false; }
       spamTracker[userId].count++;
       spamTracker[userId].lastTime = now;
 
-      // Fiyatlı ise hasPaid işaretle
-      if (hasFiyat) {
-        spamTracker[userId].hasPaid = true;
-        spamTracker[userId].paidTime = Date.now();
-      }
+      // Fiyat varsa (caption'da) veya daha önce fiyat verdiyse (aynı toplu)
+      if (hasFiyat) { spamTracker[userId].hasPaid = true; spamTracker[userId].paidTime = Date.now(); }
+      const isPaid = hasFiyat || spamTracker[userId].hasPaid;
 
-      // 10'dan fazla → sil + uyar DM'ye (fiyatlı fiyatsız fark etmez)
+      // 10'dan fazla → sil + 1 kere DM uyarı
       if (spamTracker[userId].count > 10) {
         if (!spamTracker[userId].warned10) {
           try { await sock.sendMessage(userId, { text: `⚠️ 10 adetten fazla resim yüklenemez.\n\n🛡️ _Grup Yönetimi_` }); } catch(e) {}
           spamTracker[userId].warned10 = true;
         }
         const delKey = msg.key;
-        const tryDel = async (attempt) => { try { await sock.sendMessage(chatId, { delete: delKey }); } catch(e) { if (attempt < 20) setTimeout(() => tryDel(attempt + 1), 3000); } };
+        const tryDel = async (a) => { try { await sock.sendMessage(chatId, { delete: delKey }); } catch(e) { if (a < 20) setTimeout(() => tryDel(a+1), 3000); } };
         tryDel(1);
         stats.messagesDeleted++;
         return;
       }
 
-      // 1dk'da 1 ilan hakkı — daha önce ilan attıysa ve 1dk geçmediyse sil + DM uyarı
-      if (spamTracker[userId].hasPaid && (Date.now() - spamTracker[userId].paidTime > 5000) && (Date.now() - spamTracker[userId].paidTime < 60000)) {
-        const delKey = msg.key;
-        const tryDel = async (attempt) => { try { await sock.sendMessage(chatId, { delete: delKey }); } catch(e) { if (attempt < 20) setTimeout(() => tryDel(attempt + 1), 3000); } };
-        tryDel(1);
-        if (!spamTracker[userId].ozelUyari) {
-          spamTracker[userId].ozelUyari = true;
-          try { await sock.sendMessage(userId, { text: `⚠️ 1 dakikada 1 ilan atabilirsiniz. Lütfen bekleyiniz.\n\n🛡️ _Grup Yönetimi_` }); } catch(e) {}
-        }
-        return;
-      }
+      // Fiyatlı → geç (10 ve altı serbest)
+      if (isPaid) return;
 
-      // Fiyatlı ise hasPaid işaretle ve geç
-      if (hasFiyat) {
-        spamTracker[userId].hasPaid = true;
-        spamTracker[userId].paidTime = Date.now();
-        return;
-      }
+      // Fiyatsız resim → 30sn bekle sonra sil (toplu bitmesini bekle)
+      const delKey = msg.key;
+      setTimeout(() => {
+        const tryDel = async (a) => { try { await sock.sendMessage(chatId, { delete: delKey }); } catch(e) { if (a < 20) setTimeout(() => tryDel(a+1), 3000); } };
+        tryDel(1);
+      }, 30000);
+      stats.messagesDeleted++;
+      return;
     }
 
     // === FIYAT VARSA (medyasız fiyatlı mesaj) ===
