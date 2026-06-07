@@ -205,8 +205,8 @@ async function handleMessage(msg) {
       return;
     }
 
-    // Adminler muaf
-    if (isAdmin) return;
+    // Adminler muaf (GEÇİCİ KAPALI - TEST İÇİN)
+    // if (isAdmin) return;
 
     if (!config.automation.noPrice) return;
 
@@ -217,48 +217,68 @@ async function handleMessage(msg) {
       /(fiyat|tane|adet)\s*:?\s*\d+[\.,]?\d*|\d+[\.,]?\d*\s*(fiyat|tane|adet)/i.test(msgText) ||
       ((/\d{5,}/.test(msgText) || /\d{1,3}[\.,]\d{3}/.test(msgText)) && !/km/i.test(msgText));
 
-    // === 10 RESİM LİMİTİ + 1DK KURAL ===
+    // === 10 RESİM LİMİTİ (fiyatli fiyatsiz fark etmez, herkese) ===
     if (hasMedia) {
       if (!spamTracker[userId]) spamTracker[userId] = { count: 0, lastTime: 0, warned10: false, hasPaid: false, paidTime: 0, ozelUyari: false };
       const now = Date.now();
-      if (now - spamTracker[userId].lastTime > 30000) { spamTracker[userId].count = 0; spamTracker[userId].warned10 = false; spamTracker[userId].ozelUyari = false; }
-      // hasPaid 1dk sonra sıfırla
-      if (spamTracker[userId].hasPaid && now - spamTracker[userId].paidTime > 60000) { spamTracker[userId].hasPaid = false; }
+      if (now - spamTracker[userId].lastTime > 60000) { spamTracker[userId].count = 0; spamTracker[userId].warned10 = false; spamTracker[userId].hasPaid = false; spamTracker[userId].ozelUyari = false; }
       spamTracker[userId].count++;
       spamTracker[userId].lastTime = now;
 
-      // Fiyat varsa (caption'da) veya daha önce fiyat verdiyse (aynı toplu)
-      if (hasFiyat) { spamTracker[userId].hasPaid = true; spamTracker[userId].paidTime = Date.now(); }
-      const isPaid = hasFiyat || spamTracker[userId].hasPaid;
-
-      // 10'dan fazla → sil + 1 kere DM uyarı
-      if (spamTracker[userId].count > 10) {
-        if (!spamTracker[userId].warned10) {
-          try { await sock.sendMessage(userId, { text: `⚠️ 10 adetten fazla resim yüklenemez.\n\n🛡️ _Grup Yönetimi_` }); } catch(e) {}
-          spamTracker[userId].warned10 = true;
+      if (spamTracker[userId].count > 9 && spamTracker[userId].hasPaid) {
+        // 10 limit - fiyatli resmi silme (caption'da fiyat varsa geç)
+        if (hasFiyat) {
+          // Fiyatli - dokunma
+        } else {
+          if (!spamTracker[userId].warned10) {
+            try { await sock.sendMessage(userId, { text: `⚠️ 10 adetten fazla resim yüklenemez.\n\n🛡️ _Grup Yönetimi_` }); } catch(e) {}
+            spamTracker[userId].warned10 = true;
+          }
+          const delKey = msg.key;
+          const tryDel = async (a) => { try { await sock.sendMessage(chatId, { delete: delKey }); } catch(e) { if (a < 20) setTimeout(() => tryDel(a+1), 3000); } };
+          tryDel(1);
+          stats.messagesDeleted++;
+          return;
         }
+      }
+    }
+
+    // === FIYAT VARSA MUAF ===
+    if (hasFiyat) {
+      if (!spamTracker[userId]) spamTracker[userId] = { count: 0, lastTime: 0, warned10: false, hasPaid: false, paidTime: 0, ozelUyari: false };
+      // 1dk icinde tekrar ilan atiyorsa sil + DM uyar
+      if (spamTracker[userId].hasPaid && (Date.now() - spamTracker[userId].paidTime > 5000) && (Date.now() - spamTracker[userId].paidTime < 60000)) {
         const delKey = msg.key;
         const tryDel = async (a) => { try { await sock.sendMessage(chatId, { delete: delKey }); } catch(e) { if (a < 20) setTimeout(() => tryDel(a+1), 3000); } };
         tryDel(1);
-        stats.messagesDeleted++;
+        if (!spamTracker[userId].ozelUyari) {
+          spamTracker[userId].ozelUyari = true;
+          try { await sock.sendMessage(userId, { text: `⚠️ 1 dakikada 1 ilan atabilirsiniz. Lütfen bekleyiniz.\n\n🛡️ _Grup Yönetimi_` }); } catch(e) {}
+        }
         return;
       }
-
-      // Fiyatlı → geç (10 ve altı serbest)
-      if (isPaid) return;
-
-      // Fiyatsız resim → 30sn bekle sonra sil (toplu bitmesini bekle)
-      const delKey = msg.key;
-      setTimeout(() => {
-        const tryDel = async (a) => { try { await sock.sendMessage(chatId, { delete: delKey }); } catch(e) { if (a < 20) setTimeout(() => tryDel(a+1), 3000); } };
-        tryDel(1);
-      }, 30000);
-      stats.messagesDeleted++;
+      spamTracker[userId].hasPaid = true;
+      spamTracker[userId].paidTime = Date.now();
       return;
     }
 
-    // === FIYAT VARSA (medyasız fiyatlı mesaj) ===
-    if (hasFiyat) return;
+    // === 1 DAKIKADA 1 ILAN HAKKI ===
+    if (spamTracker[userId] && spamTracker[userId].hasPaid) {
+      const sinceLastPaid = Date.now() - spamTracker[userId].paidTime;
+      // Ayni anda gelen toplu resimler (5sn icinde) muaf
+      if (sinceLastPaid < 5000) return;
+      // 1dk gecmediyse sil + DM uyar
+      if (sinceLastPaid < 60000) {
+        const delKey = msg.key;
+        const tryDel = async (a) => { try { await sock.sendMessage(chatId, { delete: delKey }); } catch(e) { if (a < 20) setTimeout(() => tryDel(a+1), 3000); } };
+        tryDel(1);
+        if (!spamTracker[userId].ozelUyari) {
+          spamTracker[userId].ozelUyari = true;
+          try { await sock.sendMessage(userId, { text: `⚠️ 1 dakikada 1 ilan atabilirsiniz. Lütfen bekleyiniz.\n\n🛡️ _Grup Yönetimi_` }); } catch(e) {}
+        }
+        return;
+      }
+    }
 
     // === SORU / SOHBET FİLTRESİ ===
     const soruIfadeleri = ['?', ' mı', ' mi', ' mu', ' mü', 'hala ', 'halen ', 'satıldı', 'satildi', 'ne kadar', 'kaça', 'kaca', 'fiyat ne', 'fiyatı ne', 'almak istiyorum', 'arıyorum', 'ariyorum', 'alıcı', 'alici', 'bakıyorum', 'bakiyorum', 'ilgilenirim', 'var mı', 'varmı', 'ister misin', 'olur mu', 'nerede', 'nerden', 'tavsiye', 'öneri'];
@@ -279,44 +299,30 @@ async function handleMessage(msg) {
 
     // === FIYATSIZ İLAN KESİNLEŞTİ ===
 
-    // Reklam muafiyeti kontrolü
-    if (reklamMuafMsgIds.has(msg.key.id)) {
-      reklamMuafMsgIds.delete(msg.key.id);
-      return;
-    }
-
     if (!noPriceCounter[userId]) noPriceCounter[userId] = { warned: false, warnedTime: 0 };
     const quota = noPriceCounter[userId];
     if (Date.now() - quota.warnedTime > 15 * 60 * 1000) quota.warned = false;
 
-    // 2. kez (15dk içinde): sessiz sil + logla
+    // 2. kez (15dk içinde): sessiz sil
     if (quota.warned) {
       const delKey2 = msg.key;
-      const tryDel2 = async (attempt) => { try { await sock.sendMessage(chatId, { delete: delKey2 }); } catch(e) { if (attempt < 20) setTimeout(() => tryDel2(attempt + 1), 3000); } };
+      const tryDel2 = async (a) => { try { await sock.sendMessage(chatId, { delete: delKey2 }); } catch(e) { if (a < 20) setTimeout(() => tryDel2(a+1), 3000); } };
       tryDel2(1);
       stats.messagesDeleted++;
-      const logEntry = { id: Date.now().toString(), tarih: new Date().toLocaleDateString('tr-TR'), saat: new Date().toLocaleTimeString('tr-TR'), kullanici: userId.split('@')[0], grup: groupName, grupId: chatId, mesaj: msgText || '(Resimli ilan)', sebep: 'Fiyatsız ilan (sessiz)' };
-      deletedAdsLog.unshift(logEntry);
-      saveDeletedLog();
       io.emit('log', { type: 'deleted', user: userId.split('@')[0], group: groupName });
       return;
     }
 
-    // 1. kez: DM'ye uyar + 1dk sonra sil + logla
+    // 1. kez: DM'ye uyar + 1dk sonra sil
     quota.warned = true;
     quota.warnedTime = Date.now();
     try { await sock.sendMessage(userId, { text: `⚠️ İlanınıza fiyat girmediniz. 1 dakika içerisinde silinecektir.\nLütfen fiyat girerek tekrar gönderiniz.\n\n🛡️ _${groupName} Yönetimi_` }); } catch(e) {}
-    await sock.sendMessage(chatId, { text: `⚠️ Fiyatsız ilan tespit edildi. 1 dakika içinde silinecektir.\n🛡️ _${groupName} Yönetimi_` });
 
     const msgKey = msg.key;
-    const msgTextLog = msgText;
     setTimeout(async () => {
-      const tryDel3 = async (attempt) => { try { await sock.sendMessage(chatId, { delete: msgKey }); } catch(e) { if (attempt < 20) setTimeout(() => tryDel3(attempt + 1), 3000); } };
+      const tryDel3 = async (a) => { try { await sock.sendMessage(chatId, { delete: msgKey }); } catch(e) { if (a < 20) setTimeout(() => tryDel3(a+1), 3000); } };
       tryDel3(1);
       stats.messagesDeleted++;
-      const logEntry = { id: Date.now().toString(), tarih: new Date().toLocaleDateString('tr-TR'), saat: new Date().toLocaleTimeString('tr-TR'), kullanici: userId.split('@')[0], grup: groupName, grupId: chatId, mesaj: msgTextLog || '(Resimli ilan)', sebep: 'Fiyatsız ilan (otomatik)' };
-      deletedAdsLog.unshift(logEntry);
-      saveDeletedLog();
       io.emit('log', { type: 'deleted', user: userId.split('@')[0], group: groupName });
     }, config.deleteDelay);
 
