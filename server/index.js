@@ -21,6 +21,8 @@ let isReady = false;
 let botStartTime = 0;
 let connectedGroups = [];
 let activeGroupId = null;
+// Restart'ta aktif grubu dosyadan oku
+try { const saved = fs.readFileSync('./active-group.txt', 'utf8').trim(); if (saved) activeGroupId = saved; } catch(e) {}
 let spamTracker = {};
 let pausedGroups = new Set();
 let mutedUsers = new Set();
@@ -182,62 +184,134 @@ async function handleMessage(msg) {
     }
     const hasMedia = !!(msg.message?.imageMessage || msg.message?.videoMessage);
 
-    if (isFromMe && msgText && (msgText.includes('Grup Yönetimi') || msgText.includes('tespit edildi'))) return;
+    // Bot'un kendi mesajlarını atla
+    if (isFromMe && msgText && (msgText.includes('Grup Yönetimi') || msgText.includes('tespit edildi') || msgText.includes('susturulm') || msgText.includes('━━━'))) return;
+    if (isFromMe && msgText && (msgText.includes('Bu ilan reklam') || msgText.includes('Reklam ücreti') || msgText.includes('Geri Yüklenen'))) return;
 
     const userId = msg.key.participant || msg.key.remoteJid;
     let isAdmin = isFromMe;
+    let groupName = chatId;
     try {
       const meta = await sock.groupMetadata(chatId);
+      groupName = meta.subject;
       const p = meta.participants.find(x => x.id === userId);
       if (p && (p.admin === 'admin' || p.admin === 'superadmin')) isAdmin = true;
     } catch(e) {}
 
+    // Susturulan üye kontrolü
     if (mutedUsers.has(userId) && !isAdmin) {
       try { await sock.sendMessage(chatId, { delete: msg.key }); } catch(e) {}
       return;
     }
 
+    // Adminler muaf
+    if (isAdmin) return;
+
     if (!config.automation.noPrice) return;
 
+    const msgLower = msgText.toLowerCase();
+
+    // === FIYAT ALGILAMA ===
     const hasFiyat = /\d+[\.,]?\d*\s*(tl|lira|₺|k\b|bin\b|m\b|milyon\b|milyar\b)/i.test(msgText) ||
       /(fiyat|tane|adet)\s*:?\s*\d+[\.,]?\d*|\d+[\.,]?\d*\s*(fiyat|tane|adet)/i.test(msgText) ||
       ((/\d{5,}/.test(msgText) || /\d{1,3}[\.,]\d{3}/.test(msgText)) && !/km/i.test(msgText));
 
-    if (hasFiyat) return;
+    // === 10 RESİM LİMİTİ ===
+    if (hasMedia) {
+      if (!spamTracker[userId]) spamTracker[userId] = { count: 0, lastTime: 0, warned10: false, hasPaid: false, paidTime: 0, ozelUyari: false };
+      const now = Date.now();
+      if (now - spamTracker[userId].lastTime > 60000) { spamTracker[userId].count = 0; spamTracker[userId].warned10 = false; spamTracker[userId].hasPaid = false; spamTracker[userId].ozelUyari = false; }
+      spamTracker[userId].count++;
+      spamTracker[userId].lastTime = now;
 
-    const msgLower = msgText.toLowerCase();
-    const soruIfadeleri = ['?', ' mı', ' mi', ' mu', ' mü', 'ne kadar', 'kaça', 'var mı', 'satıldı'];
-    if (!hasMedia) {
-      if (soruIfadeleri.some(k => msgLower.includes(k))) return;
-      const ilanKeywords = ['satılık', 'satilik', 'satıyorum', 'satiyorum', 'takas', 'devren', 'kiralık', 'sahibinden', 'acilen', 'temiz', 'sorunsuz'];
-      if (!ilanKeywords.some(k => msgLower.includes(k))) return;
+      if (spamTracker[userId].count > 10) {
+        if (!spamTracker[userId].warned10) {
+          await sock.sendMessage(chatId, { text: `⚠️ 10 adetten fazla resim yüklenemez.\n🛡️ _Grup Yönetimi_` });
+          spamTracker[userId].warned10 = true;
+        }
+        try { await sock.sendMessage(chatId, { delete: msg.key }); } catch(e) {}
+        stats.messagesDeleted++;
+        return;
+      }
     }
 
+    // === FIYAT VARSA - 1DK'DA 1 İLAN HAKKI ===
+    if (hasFiyat) {
+      if (!spamTracker[userId]) spamTracker[userId] = { count: 0, lastTime: 0, warned10: false, hasPaid: false, paidTime: 0, ozelUyari: false };
+      // 1dk içinde tekrar ilan atıyorsa sil
+      if (spamTracker[userId].hasPaid && (Date.now() - spamTracker[userId].paidTime > 5000) && (Date.now() - spamTracker[userId].paidTime < 60000)) {
+        try { await sock.sendMessage(chatId, { delete: msg.key }); } catch(e) {}
+        if (!spamTracker[userId].ozelUyari) {
+          spamTracker[userId].ozelUyari = true;
+          // Özeline uyarı gönder
+          try {
+            await sock.sendMessage(userId, { text: `⚠️ 1 dakikada 1 ilan atabilirsiniz. Lütfen bekleyiniz.\n\n🛡️ _Grup Yönetimi_` });
+          } catch(e) {}
+        }
+        return;
+      }
+      spamTracker[userId].hasPaid = true;
+      spamTracker[userId].paidTime = Date.now();
+      return;
+    }
+
+    // === 1DK İÇİNDE TEKRAR İLAN (fiyatsız) ===
+    if (spamTracker[userId] && spamTracker[userId].hasPaid) {
+      const sinceLastPaid = Date.now() - spamTracker[userId].paidTime;
+      if (sinceLastPaid < 5000) return; // Toplu resimler muaf
+      if (sinceLastPaid < 60000) {
+        try { await sock.sendMessage(chatId, { delete: msg.key }); } catch(e) {}
+        if (!spamTracker[userId].ozelUyari) {
+          spamTracker[userId].ozelUyari = true;
+          try { await sock.sendMessage(userId, { text: `⚠️ 1 dakikada 1 ilan atabilirsiniz. Lütfen bekleyiniz.\n\n🛡️ _Grup Yönetimi_` }); } catch(e) {}
+        }
+        return;
+      }
+    }
+
+    // === SORU / SOHBET FİLTRESİ ===
+    const soruIfadeleri = ['?', ' mı', ' mi', ' mu', ' mü', 'hala ', 'halen ', 'satıldı', 'satildi', 'ne kadar', 'kaça', 'kaca', 'fiyat ne', 'fiyatı ne', 'almak istiyorum', 'arıyorum', 'ariyorum', 'alıcı', 'alici', 'bakıyorum', 'bakiyorum', 'ilgilenirim', 'var mı', 'varmı', 'ister misin', 'olur mu', 'nerede', 'nerden', 'tavsiye', 'öneri'];
+    const sohbetIfadeleri = ['bende var', 'bende bi', 'verelim', 'vereyim', 'gondereyim', 'atayım', 'atıyorum'];
+    if (!hasMedia) {
+      if (soruIfadeleri.some(kw => msgLower.includes(kw))) return;
+      if (sohbetIfadeleri.some(kw => msgLower.includes(kw))) return;
+      const ilanKeywords = ['satılık', 'satilik', 'satlık', 'satlik', 'satıyorum', 'satiyorum', 'satılır', 'satilir', 'satlır', 'satlir', 'satis', 'satış', 'takas', 'devren', 'kiralık', 'kiralik', 'verilir', 'sahibinden', 'acilen', 'temiz', 'sorunsuz', 'ikinci el', 'ikinciel', '2.el', 'sıfır gibi', 'sifir gibi', 'az kullanılmış', 'az kullanilmis'];
+      if (!ilanKeywords.some(kw => msgLower.includes(kw))) return;
+    }
+
+    // === ÖZELDEN YAZ FİLTRESİ ===
+    const ozeldenIfadeler = ['özelden yaz', 'özelden', 'dm', 'özel mesaj', 'özele gel', 'fiyat özelden', 'fiyat dm', 'fiyat özel', 'özelim'];
+    if (ozeldenIfadeler.some(kw => msgLower.includes(kw)) && !hasMedia) {
+      await sock.sendMessage(chatId, { text: `⚠️ Fiyatı grupta belirtin! Özelden fiyat vermek yasaktır.\n🛡️ _Grup Yönetimi_` });
+      return;
+    }
+
+    // === FIYATSIZ İLAN KESİNLEŞTİ ===
     if (!noPriceCounter[userId]) noPriceCounter[userId] = { warned: false, warnedTime: 0 };
     const quota = noPriceCounter[userId];
     if (Date.now() - quota.warnedTime > 15 * 60 * 1000) quota.warned = false;
 
-    let groupName = chatId;
-    try { const gm = await sock.groupMetadata(chatId); groupName = gm.subject; } catch(e) {}
-
+    // 2. kez (15dk içinde): sessiz sil
     if (quota.warned) {
-      await sock.sendMessage(chatId, { delete: msg.key });
+      try { await sock.sendMessage(chatId, { delete: msg.key }); } catch(e) {}
       stats.messagesDeleted++;
       io.emit('log', { type: 'deleted', user: userId.split('@')[0], group: groupName });
       return;
     }
 
+    // 1. kez: uyar + 1dk sonra sil
     quota.warned = true;
     quota.warnedTime = Date.now();
     await sock.sendMessage(chatId, { text: `⚠️ İlanınıza fiyat girmediniz. 1 dakika içerisinde silinecektir.\nLütfen fiyat girerek tekrar gönderiniz.\n\n🛡️ _${groupName} Yönetimi_` });
 
+    const msgKey = msg.key;
     setTimeout(async () => {
-      try { await sock.sendMessage(chatId, { delete: msg.key }); } catch(e) {}
+      try { await sock.sendMessage(chatId, { delete: msgKey }); } catch(e) {}
       stats.messagesDeleted++;
       io.emit('log', { type: 'deleted', user: userId.split('@')[0], group: groupName });
     }, config.deleteDelay);
 
-  } catch(e) {}
+  } catch(e) { debugLog('handleMessage error: ' + e.message); }
 }
 
 // Static dosyalar
@@ -295,6 +369,8 @@ app.post('/api/send-message', async (req, res) => {
 
 app.post('/api/set-active-group', (req, res) => {
   activeGroupId = req.body.groupId || null;
+  // Dosyaya kaydet (restart'ta kaybolmasın)
+  try { fs.writeFileSync('./active-group.txt', activeGroupId || '', 'utf8'); } catch(e) {}
   res.json({ success: true });
 });
 
