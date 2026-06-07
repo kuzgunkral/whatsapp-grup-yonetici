@@ -130,9 +130,10 @@ async function connect(phoneNumber) {
       }
     });
 
-    sock.ev.on('messages.upsert', ({ messages, type }) => {
-      if (type !== 'notify') return;
-      messages.forEach(msg => handleMessage(msg));
+    sock.ev.on('messages.upsert', (m) => {
+      debugLog('messages.upsert received: ' + (m.messages ? m.messages.length : 0) + ' msgs, type: ' + m.type);
+      if (m.type !== 'notify') return;
+      m.messages.forEach(msg => handleMessage(msg));
     });
 
     sock.ev.on('group-participants.update', (update) => {
