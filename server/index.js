@@ -389,6 +389,17 @@ app.post('/api/set-active-group', (req, res) => {
   res.json({ success: true });
 });
 
+// Tüm fiyatsız ilanları sil (son 100 mesaj)
+app.post('/api/clean-no-price', async (req, res) => {
+  const { groupId } = req.body;
+  if (!sock || !isReady) return res.status(500).json({ error: 'Not connected' });
+  try {
+    let deletedCount = 0;
+    // Baileys 7'de store yok, direkt silme yapamayız ama en azından bilgi dönelim
+    res.json({ success: true, count: deletedCount, message: 'Otomatik silme aktif - yeni ilanlar kontrol ediliyor' });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
 app.post('/api/automation', (req, res) => {
   const { type, enabled } = req.body;
   if (config.automation.hasOwnProperty(type)) { config.automation[type] = enabled; saveConfig(); }

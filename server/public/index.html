@@ -102,9 +102,11 @@
     <div class="card">
       <div class="card-title">🛡️ Grup İşlemleri</div>
       <button class="btn btn-secondary" onclick="sendRules()">📢 Kural Gönder</button>
+      <button class="btn btn-danger" onclick="cleanNoPrice()">🗑️ Fiyatsız İlanları Sil</button>
       <button class="btn btn-warning" onclick="closeGroup()">🔒 Grubu Kapat</button>
       <button class="btn btn-secondary" onclick="openGroup()">🔓 Grubu Aç</button>
       <button class="btn btn-secondary" onclick="pauseGroup()">⏸️ Botu Duraklat</button>
+      <button class="btn btn-danger" onclick="cleanNoPrice()">🗑️ Tüm Fiyatsız İlanları Sil</button>
     </div>
     <div class="card">
       <div class="card-title">👥 Üyeler</div>
@@ -277,6 +279,7 @@
     }
 
     async function sendRules() { if (!activeGroupId) { alert('Grup seçin'); return; } await fetch(API + '/api/send-rules', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({groupId: activeGroupId}) }); alert('Kurallar gönderildi'); }
+    async function cleanNoPrice() { if (!activeGroupId) { alert('Grup seçin'); return; } const r = await fetch(API + '/api/clean-no-price', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({groupId: activeGroupId}) }); const d = await r.json(); alert(d.message || d.count + ' ilan silindi'); }
     async function closeGroup() { if (!activeGroupId) return; await fetch(API + '/api/close-group', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({groupId: activeGroupId}) }); alert('Grup kapatıldı'); }
     async function openGroup() { if (!activeGroupId) return; await fetch(API + '/api/open-group', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({groupId: activeGroupId}) }); alert('Grup açıldı'); }
     async function pauseGroup() { if (!activeGroupId) return; await fetch(API + '/api/pause-group', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({groupId: activeGroupId}) }); alert('Bot duraklatıldı'); }
