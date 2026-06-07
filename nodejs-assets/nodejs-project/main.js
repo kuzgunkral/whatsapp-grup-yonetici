@@ -51,6 +51,11 @@ async function connect(phoneNumber) {
     loadDeletedLog();
     loadConfig();
     if (!fs.existsSync(AUTH_DIR)) fs.mkdirSync(AUTH_DIR, { recursive: true });
+    
+    // Eğer telefon numarası verilmişse VE kayıtlı session yoksa, eski auth'u temizle
+    if (phoneNumber) {
+      try { fs.rmSync(AUTH_DIR, { recursive: true, force: true }); fs.mkdirSync(AUTH_DIR, { recursive: true }); } catch(e) {}
+    }
 
     var baileys = await import('baileys');
     var makeWASocket = baileys.makeWASocket || baileys.default;
