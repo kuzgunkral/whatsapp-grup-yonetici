@@ -208,19 +208,18 @@ async function handleMessage(msg) {
     // Adminler muaf (GEÇİCİ KAPALI - TEST İÇİN)
     // if (isAdmin) return;
 
-    // Admin reklam onayı: admin "reklam" yazarsa son fiyatsız mesajı muaf et
-    if (isAdmin && msgText && msgText.toLowerCase().includes('reklam')) {
-      // Son fiyatsız mesajları muaf et (30sn içinde silinecekleri koru)
-      // En son gelen mesajların ID'lerini muaf listesine ekle
-      if (spamTracker) {
+    // Admin reklam onayı: admin belirli kelimeleri yazarsa son fiyatsız mesajı muaf et
+    if (isAdmin && msgText) {
+      const reklamKelimeleri = ['bu ilan reklam', 'reklam ücreti', 'ücretli reklam', 'sponsor', 'ücreti alınmıştır', 'ücretli ilan', 'onaylı ilan', 'onaylanarak yayınlanmıştır'];
+      if (reklamKelimeleri.some(kw => msgText.toLowerCase().includes(kw))) {
+        // Son fiyatsız mesajları muaf et
         Object.keys(spamTracker).forEach(uid => {
           if (!spamTracker[uid].hasPaid && spamTracker[uid].lastTime && (Date.now() - spamTracker[uid].lastTime < 35000)) {
-            // Bu kullanıcının son mesajlarını muaf et
             spamTracker[uid].hasPaid = true;
           }
         });
+        return;
       }
-      return;
     }
 
     if (!config.automation.noPrice) return;
