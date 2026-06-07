@@ -245,15 +245,6 @@ async function handleMessage(msg) {
         return;
       }
     }
-        if (!spamTracker[userId].warned10) {
-          await sock.sendMessage(chatId, { text: `⚠️ 10 adetten fazla resim yüklenemez.\n🛡️ _Grup Yönetimi_` });
-          spamTracker[userId].warned10 = true;
-        }
-        try { await sock.sendMessage(chatId, { delete: msg.key }); } catch(e) {}
-        stats.messagesDeleted++;
-        return;
-      }
-    }
 
     // === FIYAT VARSA - 1DK'DA 1 İLAN HAKKI ===
     if (hasFiyat) {
