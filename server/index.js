@@ -279,8 +279,8 @@ async function handleMessage(msg) {
       // İlk ilanın parçası - 10 limit kontrolü
       if (spamTracker[userId].count > 10) {
         if (!spamTracker[userId].warned10) {
-          try { await sock.sendMessage(userId, { text: `⚠️ 10 adetten fazla resim yüklenemez.\n\n🛡️ _Grup Yönetimi_` }); } catch(e) {}
           spamTracker[userId].warned10 = true;
+          try { await sock.sendMessage(chatId, { text: `⚠️ 10 adetten fazla resim yüklenemez.\n🛡️ _Grup Yönetimi_` }); } catch(e) {}
         }
         const delKey = msg.key;
         const tryDel = async (a) => { try { await sock.sendMessage(chatId, { delete: delKey }); } catch(e) { if (a < 20) setTimeout(() => tryDel(a+1), 3000); } };
