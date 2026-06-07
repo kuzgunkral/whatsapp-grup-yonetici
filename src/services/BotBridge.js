@@ -5,7 +5,7 @@
 
 import { EventEmitter } from 'events';
 
-const SERVER_URL = 'https://whatsapp-bot-npk0.onrender.com';
+const SERVER_URL = 'https://whatsapp-grup-yonetici-production.up.railway.app';
 
 class BotBridge extends EventEmitter {
   constructor() {
