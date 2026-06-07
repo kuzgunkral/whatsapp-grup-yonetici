@@ -1,15 +1,11 @@
 /**
- * Bot Bridge - React Native <-> Node.js Engine haberleşme
+ * Bot Bridge - React Native <-> Railway Server haberleşme
+ * HTTP + Socket.IO ile uzak sunucuya bağlanır
  */
 
 import { EventEmitter } from 'events';
 
-let nodejs = null;
-try {
-  nodejs = require('nodejs-mobile-react-native');
-} catch (e) {
-  console.warn('nodejs-mobile not available:', e.message);
-}
+const SERVER_URL = 'https://whatsapp-grup-yonetici-production.up.railway.app';
 
 class BotBridge extends EventEmitter {
   constructor() {
@@ -19,102 +15,79 @@ class BotBridge extends EventEmitter {
     this.groups = [];
     this.stats = { messagesDeleted: 0, welcomesSent: 0, rulesReminded: 0, spammersRemoved: 0 };
     this.initialized = false;
+    this.pollInterval = null;
   }
 
   init() {
     if (this.initialized) return;
-    if (!nodejs) {
-      this.emit('error', 'Node.js engine yüklenemedi');
-      return;
-    }
-
-    try {
-      nodejs.start('main.js');
-      this.initialized = true;
-
-      nodejs.channel.addListener('message', (raw) => {
-        try {
-          const { event, data } = JSON.parse(raw);
-
-          switch (event) {
-            case 'engine_ready':
-              this.isEngineReady = true;
-              this.emit('engine_ready');
-              break;
-            case 'pairing_code':
-              this.emit('pairing_code', data.code);
-              break;
-            case 'status':
-              this.isConnected = data.connected;
-              if (data.groups) this.groups = data.groups;
-              if (data.stats) this.stats = data.stats;
-              this.emit('status', data);
-              break;
-            case 'groups':
-              this.groups = data.groups;
-              this.emit('groups', data.groups);
-              break;
-            case 'members':
-              this.emit('members', data.members);
-              break;
-            case 'deleted_ads':
-              this.emit('deleted_ads', data.data);
-              break;
-            case 'restore_done':
-              this.emit('restore_done', data.id);
-              break;
-            case 'cache_cleared':
-              this.emit('cache_cleared', data.cleared);
-              break;
-            case 'log':
-              this.emit('log', data);
-              break;
-            case 'logged_out':
-              this.isConnected = false;
-              this.emit('logged_out');
-              break;
-            case 'error':
-              this.emit('error', data.message);
-              break;
-          }
-        } catch (e) {}
-      });
-    } catch (e) {
-      this.emit('error', 'Engine başlatılamadı: ' + e.message);
-    }
+    this.initialized = true;
+    this.isEngineReady = true;
+    this.emit('engine_ready');
+    this._startPolling();
   }
 
-  send(action, data = {}) {
-    if (!nodejs || !this.initialized) return;
+  _startPolling() {
+    this._fetchStatus();
+    this.pollInterval = setInterval(() => this._fetchStatus(), 5000);
+  }
+
+  async _fetchStatus() {
     try {
-      nodejs.channel.send(JSON.stringify({ action, data }));
+      const res = await fetch(`${SERVER_URL}/api/status`);
+      const data = await res.json();
+      this.isConnected = data.connected;
+      if (data.groups) this.groups = data.groups;
+      if (data.stats) this.stats = data.stats;
+      this.emit('status', { connected: data.connected, groups: data.groups, stats: data.stats });
+      if (data.pairingCode) this.emit('pairing_code', data.pairingCode);
     } catch (e) {}
   }
 
-  connect(phoneNumber) { this.send('connect', { phoneNumber }); }
-  getStatus() { this.send('get_status'); }
-  setActiveGroup(groupId) { this.send('set_active_group', { groupId }); }
-  sendMessage(groupId, message) { this.send('send_message', { groupId, message }); }
-  sendRules(groupId) { this.send('send_rules', { groupId }); }
-  sendAnnouncement(groupId, message) { this.send('send_announcement', { groupId, message }); }
-  closeGroup(groupId) { this.send('close_group', { groupId }); }
-  openGroup(groupId) { this.send('open_group', { groupId }); }
-  pauseGroup(groupId) { this.send('pause_group', { groupId }); }
-  muteMember(groupId, memberId) { this.send('mute_member', { groupId, memberId }); }
-  unmuteMember(groupId, memberId) { this.send('unmute_member', { groupId, memberId }); }
-  removeMember(groupId, memberId) { this.send('remove_member', { groupId, memberId }); }
-  banMember(groupId, memberId) { this.send('ban_member', { groupId, memberId }); }
-  getMembers(groupId) { this.send('get_members', { groupId }); }
-  getDeletedAds() { this.send('get_deleted_ads'); }
-  restoreAd(id) { this.send('restore_ad', { id }); }
-  restoreAsAd(id) { this.send('restore_as_ad', { id }); }
-  clearLogs() { this.send('clear_logs'); }
-  clearMediaCache() { this.send('clear_media_cache'); }
-  setAutomation(type, enabled) { this.send('set_automation', { type, enabled }); }
-  setDeleteDelay(seconds) { this.send('set_delete_delay', { seconds }); }
-  setRuleInterval(hours) { this.send('set_rule_interval', { hours }); }
-  setCustomRule(message) { this.send('set_custom_rule', { message }); }
-  restart() { this.send('restart'); }
+  async _post(endpoint, body = {}) {
+    try {
+      const res = await fetch(`${SERVER_URL}${endpoint}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      return await res.json();
+    } catch (e) {
+      this.emit('error', 'Sunucuya bağlanılamadı');
+      return { success: false };
+    }
+  }
+
+  async _get(endpoint) {
+    try {
+      const res = await fetch(`${SERVER_URL}${endpoint}`);
+      return await res.json();
+    } catch (e) { return { success: false }; }
+  }
+
+  connect(phoneNumber) { this._post('/api/connect', { phoneNumber }); }
+  getStatus() { this._fetchStatus(); }
+  setActiveGroup(groupId) { this._post('/api/set-active-group', { groupId }); }
+  sendMessage(groupId, message) { this._post('/api/send-message', { groupId, message }); }
+  sendRules(groupId) { this._post('/api/send-rules', { groupId }); }
+  sendAnnouncement(groupId, message) { this._post('/api/send-message', { groupId, message: `📢 *DUYURU*\n━━━━━━━━━━━━━━━━\n\n${message}\n\n🛡️ Grup Yönetimi` }); }
+  closeGroup(groupId) { this._post('/api/close-group', { groupId }); }
+  openGroup(groupId) { this._post('/api/open-group', { groupId }); }
+  pauseGroup(groupId) { this._post('/api/pause-group', { groupId }); }
+  muteMember(groupId, memberId) { this._post('/api/mute-member', { groupId, memberId }); }
+  unmuteMember(groupId, memberId) { this._post('/api/unmute-member', { groupId, memberId }); }
+  removeMember(groupId, memberId) { this._post('/api/remove-member', { groupId, memberId }); }
+  banMember(groupId, memberId) { this._post('/api/ban-member', { groupId, memberId }); }
+  async getMembers(groupId) { const data = await this._get(`/api/members?groupId=${groupId}`); if (data.members) this.emit('members', data.members); }
+  async getDeletedAds() { const data = await this._get('/api/deleted-ads'); if (data.data) this.emit('deleted_ads', data.data); }
+  async restoreAd(id) { const res = await this._post('/api/restore-ad', { id }); if (res.success) this.emit('restore_done', id); }
+  async restoreAsAd(id) { const res = await this._post('/api/restore-as-ad', { id }); if (res.success) this.emit('restore_done', id); }
+  async clearLogs() { await this._post('/api/clear-all-logs'); }
+  async clearMediaCache() { const res = await this._post('/api/clear-media-cache'); if (res.cleared !== undefined) this.emit('cache_cleared', res.cleared); }
+  setAutomation(type, enabled) { this._post('/api/automation', { type, enabled }); }
+  setDeleteDelay(seconds) { this._post('/api/set-delete-delay', { delay: seconds }); }
+  setRuleInterval(hours) { this._post('/api/set-rule-interval', { hours }); }
+  setCustomRule(message) { this._post('/api/set-rule-message', { message }); }
+  restart() { this._post('/api/restart'); }
 }
 
 const botBridge = new BotBridge();

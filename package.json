@@ -4,21 +4,16 @@
   "private": true,
   "scripts": {
     "android": "react-native run-android",
-    "start": "react-native start",
-    "postinstall": "node node_modules/nodejs-mobile-react-native/scripts/prepareNodeProject.js || echo done"
+    "start": "react-native start"
   },
   "dependencies": {
     "react": "18.2.0",
     "react-native": "0.74.5",
-    "nodejs-mobile-react-native": "^18.17.7",
     "@react-navigation/native": "^6.1.9",
     "@react-navigation/bottom-tabs": "^6.5.11",
     "react-native-screens": "~3.29.0",
     "react-native-safe-area-context": "^4.8.2",
-    "react-native-background-actions": "^2.6.7",
     "@react-native-async-storage/async-storage": "^1.21.0",
-    "react-native-qrcode-svg": "^6.3.1",
-    "react-native-svg": "^14.1.0",
     "@react-native-community/slider": "^4.5.0",
     "events": "^3.3.0"
   },
