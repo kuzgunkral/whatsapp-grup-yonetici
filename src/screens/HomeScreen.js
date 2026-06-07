@@ -79,7 +79,7 @@ const HomeScreen = () => {
       botBridge.init();
       botBridge.on('error', (msg) => Alert.alert('Hata', msg));
       const clean = phoneNumber.replace(/[^0-9]/g, '');
-      setTimeout(() => botBridge.connect(clean), 2000);
+      botBridge.connect(clean);
     } catch(e) {
       Alert.alert('Hata', 'Bağlantı başlatılamadı: ' + e.message);
     }

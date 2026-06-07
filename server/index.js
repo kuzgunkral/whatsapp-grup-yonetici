@@ -307,8 +307,90 @@ app.get('/api/members', async (req, res) => {
   if (!sock || !isReady) return res.status(500).json({ error: 'Not connected' });
   try {
     const meta = await sock.groupMetadata(req.query.groupId);
-    res.json({ members: meta.participants.map(p => ({ id: p.id, number: p.id.split('@')[0], isAdmin: p.admin === 'admin' || p.admin === 'superadmin' })) });
+    res.json({ members: meta.participants.map(p => ({ id: p.id, number: p.id.split('@')[0], name: p.id.split('@')[0], isAdmin: p.admin === 'admin' || p.admin === 'superadmin' })) });
   } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/pause-group', (req, res) => {
+  pausedGroups.add(req.body.groupId);
+  res.json({ success: true });
+});
+
+app.post('/api/ban-member', async (req, res) => {
+  if (!sock || !isReady) return res.status(500).json({ error: 'Not connected' });
+  try {
+    await sock.groupParticipantsUpdate(req.body.groupId, [req.body.memberId], 'remove');
+    res.json({ success: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/deleted-ads', (req, res) => {
+  res.json({ success: true, count: deletedAdsLog.length, data: deletedAdsLog });
+});
+
+app.post('/api/restore-ad', async (req, res) => {
+  const { id } = req.body;
+  const entry = deletedAdsLog.find(e => e.id === id);
+  if (!entry) return res.status(404).json({ success: false });
+  if (sock && isReady) {
+    try { await sock.sendMessage(entry.grupId || entry.groupId, { text: entry.mesaj || entry.message || '(ilan)' }); } catch(e) {}
+  }
+  deletedAdsLog = deletedAdsLog.filter(e => e.id !== id);
+  saveDeletedLog();
+  res.json({ success: true });
+});
+
+app.post('/api/restore-as-ad', async (req, res) => {
+  const { id } = req.body;
+  const entry = deletedAdsLog.find(e => e.id === id);
+  if (!entry) return res.status(404).json({ success: false });
+  if (sock && isReady) {
+    try {
+      const groupId = entry.grupId || entry.groupId;
+      await sock.sendMessage(groupId, { text: entry.mesaj || entry.message || '(ilan)' });
+      await sock.sendMessage(groupId, { text: 'Bu ilan reklam/hizmet paylaşımıdır.\nReklam ücreti alınmış, onaylanarak yayınlanmıştır.\n\n🛡️ Grup Yönetimi' });
+    } catch(e) {}
+  }
+  deletedAdsLog = deletedAdsLog.filter(e => e.id !== id);
+  saveDeletedLog();
+  res.json({ success: true });
+});
+
+app.post('/api/clear-all-logs', (req, res) => {
+  deletedAdsLog = [];
+  saveDeletedLog();
+  res.json({ success: true });
+});
+
+app.post('/api/clear-media-cache', (req, res) => {
+  let cleared = 0;
+  deletedAdsLog.forEach(e => { if (e.medyaData) { e.medyaData = null; cleared++; } });
+  saveDeletedLog();
+  res.json({ success: true, cleared });
+});
+
+app.post('/api/set-delete-delay', (req, res) => {
+  const { delay } = req.body;
+  if (delay >= 1 && delay <= 120) { config.deleteDelay = delay * 1000; saveConfig(); }
+  res.json({ success: true });
+});
+
+app.post('/api/set-rule-interval', (req, res) => {
+  const { hours } = req.body;
+  if (hours >= 1 && hours <= 24) { config.ruleIntervalHours = hours; saveConfig(); }
+  res.json({ success: true });
+});
+
+app.post('/api/set-rule-message', (req, res) => {
+  config.customRuleMessage = req.body.message || null;
+  saveConfig();
+  res.json({ success: true });
+});
+
+app.post('/api/restart', (req, res) => {
+  res.json({ success: true, message: 'Reconnecting...' });
+  if (sock) { try { sock.end(); } catch(e) {} }
+  setTimeout(() => connect(), 2000);
 });
 
 // Socket.IO
