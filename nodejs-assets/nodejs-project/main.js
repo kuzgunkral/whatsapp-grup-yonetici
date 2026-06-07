@@ -92,24 +92,30 @@ async function connect(phoneNumber) {
     sock.ev.on('connection.update', function(update) {
       if (update.connection === 'close') {
         isReady = false;
-        var statusCode = update.lastDisconnect && update.lastDisconnect.error && update.lastDisconnect.error.output ? update.lastDisconnect.error.output.statusCode : null;
+        var statusCode = null;
+        try {
+          var err = update.lastDisconnect && update.lastDisconnect.error;
+          statusCode = err && err.output && err.output.statusCode ? err.output.statusCode : null;
+          // Baileys v6/v7 bug: statusCode bazen düzgün alınamıyor
+          if (!statusCode && err) {
+            var errStr = err.toString();
+            if (errStr.indexOf('515') >= 0) statusCode = 515;
+          }
+        } catch(e) {}
         
-        if (statusCode === 401 || statusCode === 403) {
+        // 401 = logged out, silinen session
+        if (statusCode === 401) {
+          // Auth dosyalarını sil ve tekrar pair iste
+          try { fs.rmSync(AUTH_DIR, { recursive: true, force: true }); } catch(e) {}
           send('logged_out', {});
           return;
         }
         
-        if (pairingMode) {
-          // Pairing modunda bağlantı düşerse - normal, kullanıcı kodu girecek
-          // Reconnect et ki WhatsApp kodu doğrulayabilsin
-          pairingMode = false;
-          send('status', { connected: false });
-          setTimeout(function() { connect(); }, 3000);
-          return;
-        }
-        
+        // 515 = pairing sonrası normal restart (creds kaydedildi, reconnect et)
+        // 403 = forbidden
+        // Diğer tüm hatalar = reconnect et
         send('status', { connected: false });
-        setTimeout(function() { connect(); }, 5000);
+        setTimeout(function() { connect(); }, 3000);
       }
       if (update.connection === 'open') {
         isReady = true;
