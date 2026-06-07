@@ -208,6 +208,17 @@ async function handleMessage(msg) {
   } catch(e) {}
 }
 
+// Ana sayfa
+app.get('/', (req, res) => {
+  res.json({
+    name: 'WhatsApp Grup Yonetici Bot',
+    status: isReady ? 'connected' : 'disconnected',
+    uptime: process.uptime(),
+    groups: connectedGroups.length,
+    stats
+  });
+});
+
 // API
 app.get('/api/status', (req, res) => {
   res.json({ connected: isReady, groups: connectedGroups, stats, config: config.automation, qr: currentQR, pairingCode: currentPairingCode });
