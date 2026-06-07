@@ -62,7 +62,10 @@ async function connect(phoneNumber) {
       auth: { creds: state.creds, keys: makeCacheableSignalKeyStore(state.keys, pino({ level: 'silent' })) },
       printQRInTerminal: false,
       logger: pino({ level: 'silent' }),
-      browser: ['WhatsApp Grup Yonetici', 'Chrome', '131.0.0'],
+      browser: ['Ubuntu', 'Chrome', '20.0.04'],
+      connectTimeoutMs: 60000,
+      defaultQueryTimeoutMs: 60000,
+      retryRequestDelayMs: 2000,
     });
 
     debugLog('Socket created, requesting pairing code...');
@@ -99,8 +102,11 @@ async function connect(phoneNumber) {
         io.emit('status', { connected: false });
         const code = lastDisconnect?.error?.output?.statusCode;
         debugLog('Connection closed, statusCode: ' + code);
-        if (code !== 401 && code !== 403) {
-          setTimeout(() => connect(), 5000);
+        // 405 = IP blocked, 401/403 = auth error - reconnect etme
+        if (code !== 401 && code !== 403 && code !== 405) {
+          setTimeout(() => connect(phoneNumber), 5000);
+        } else {
+          debugLog('Not reconnecting due to status: ' + code);
         }
       }
 
