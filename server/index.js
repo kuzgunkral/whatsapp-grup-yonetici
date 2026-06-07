@@ -231,10 +231,10 @@ async function handleMessage(msg) {
         spamTracker[userId].paidTime = Date.now();
       }
 
-      // 10'dan fazla → sil + uyar (fiyatlı fiyatsız fark etmez)
+      // 10'dan fazla → sil + uyar DM'ye (fiyatlı fiyatsız fark etmez)
       if (spamTracker[userId].count > 10) {
         if (!spamTracker[userId].warned10) {
-          await sock.sendMessage(chatId, { text: `⚠️ 10 adetten fazla resim yüklenemez.\n🛡️ _Grup Yönetimi_` });
+          try { await sock.sendMessage(userId, { text: `⚠️ 10 adetten fazla resim yüklenemez.\n\n🛡️ _Grup Yönetimi_` }); } catch(e) {}
           spamTracker[userId].warned10 = true;
         }
         const delKey = msg.key;
@@ -244,28 +244,28 @@ async function handleMessage(msg) {
         return;
       }
 
-      // Fiyatlı ve 10 veya altı → geç
-      if (hasFiyat) return;
-    }
-
-    // === FIYAT VARSA - 1DK'DA 1 İLAN HAKKI ===
-    if (hasFiyat) {
-      if (!spamTracker[userId]) spamTracker[userId] = { count: 0, lastTime: 0, warned10: false, hasPaid: false, paidTime: 0, ozelUyari: false };
-      // 1dk içinde tekrar fiyatlı ilan atıyorsa sil
+      // 1dk'da 1 ilan hakkı — daha önce ilan attıysa ve 1dk geçmediyse sil + DM uyarı
       if (spamTracker[userId].hasPaid && (Date.now() - spamTracker[userId].paidTime > 5000) && (Date.now() - spamTracker[userId].paidTime < 60000)) {
-        try { await sock.sendMessage(chatId, { delete: msg.key }); } catch(e) {}
+        const delKey = msg.key;
+        const tryDel = async (attempt) => { try { await sock.sendMessage(chatId, { delete: delKey }); } catch(e) { if (attempt < 20) setTimeout(() => tryDel(attempt + 1), 3000); } };
+        tryDel(1);
         if (!spamTracker[userId].ozelUyari) {
           spamTracker[userId].ozelUyari = true;
-          try {
-            await sock.sendMessage(userId, { text: `⚠️ 1 dakikada 1 ilan atabilirsiniz. Lütfen bekleyiniz.\n\n🛡️ _Grup Yönetimi_` });
-          } catch(e) {}
+          try { await sock.sendMessage(userId, { text: `⚠️ 1 dakikada 1 ilan atabilirsiniz. Lütfen bekleyiniz.\n\n🛡️ _Grup Yönetimi_` }); } catch(e) {}
         }
         return;
       }
-      spamTracker[userId].hasPaid = true;
-      spamTracker[userId].paidTime = Date.now();
-      return;
+
+      // Fiyatlı ise hasPaid işaretle ve geç
+      if (hasFiyat) {
+        spamTracker[userId].hasPaid = true;
+        spamTracker[userId].paidTime = Date.now();
+        return;
+      }
     }
+
+    // === FIYAT VARSA (medyasız fiyatlı mesaj) ===
+    if (hasFiyat) return;
 
     // === SORU / SOHBET FİLTRESİ ===
     const soruIfadeleri = ['?', ' mı', ' mi', ' mu', ' mü', 'hala ', 'halen ', 'satıldı', 'satildi', 'ne kadar', 'kaça', 'kaca', 'fiyat ne', 'fiyatı ne', 'almak istiyorum', 'arıyorum', 'ariyorum', 'alıcı', 'alici', 'bakıyorum', 'bakiyorum', 'ilgilenirim', 'var mı', 'varmı', 'ister misin', 'olur mu', 'nerede', 'nerden', 'tavsiye', 'öneri'];
@@ -309,10 +309,11 @@ async function handleMessage(msg) {
       return;
     }
 
-    // 1. kez: uyar + 1dk sonra sil + logla
+    // 1. kez: DM'ye uyar + 1dk sonra sil + logla
     quota.warned = true;
     quota.warnedTime = Date.now();
-    await sock.sendMessage(chatId, { text: `⚠️ İlanınıza fiyat girmediniz. 1 dakika içerisinde silinecektir.\nLütfen fiyat girerek tekrar gönderiniz.\n\n🛡️ _${groupName} Yönetimi_` });
+    try { await sock.sendMessage(userId, { text: `⚠️ İlanınıza fiyat girmediniz. 1 dakika içerisinde silinecektir.\nLütfen fiyat girerek tekrar gönderiniz.\n\n🛡️ _${groupName} Yönetimi_` }); } catch(e) {}
+    await sock.sendMessage(chatId, { text: `⚠️ Fiyatsız ilan tespit edildi. 1 dakika içinde silinecektir.\n🛡️ _${groupName} Yönetimi_` });
 
     const msgKey = msg.key;
     const msgTextLog = msgText;
