@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="WA Bot">
+  <meta name="theme-color" content="#111b21">
+  <link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🤖</text></svg>">
+  <title>WhatsApp Grup Yönetici</title>
+  <link rel="manifest" href="/manifest.json">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #111b21; color: #e9edef; min-height: 100vh; padding-bottom: 70px; }
+    .header { background: #1f2c33; padding: 16px 20px; position: sticky; top: 0; z-index: 100; border-bottom: 1px solid #2a3942; }
+    .header h1 { font-size: 18px; color: #00a884; }
+    .header .sub { font-size: 12px; color: #8696a0; margin-top: 2px; }
+    .tabs { display: flex; position: fixed; bottom: 0; left: 0; right: 0; background: #1f2c33; border-top: 1px solid #2a3942; z-index: 100; }
+    .tab { flex: 1; text-align: center; padding: 10px 4px; font-size: 11px; color: #8696a0; cursor: pointer; }
+    .tab.active { color: #00a884; }
+    .tab-icon { font-size: 20px; display: block; margin-bottom: 2px; }
+    .page { display: none; padding: 16px; }
+    .page.active { display: block; }
+    .card { background: #1f2c33; border-radius: 12px; padding: 16px; margin-bottom: 12px; }
+    .card-title { font-size: 13px; color: #00a884; font-weight: 600; text-transform: uppercase; margin-bottom: 12px; }
+    .status-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; margin-right: 8px; }
+    .status-dot.online { background: #00a884; }
+    .status-dot.offline { background: #ea4335; }
+    .stat-row { display: flex; justify-content: space-around; text-align: center; }
+    .stat-box .num { font-size: 28px; font-weight: bold; color: #00a884; }
+    .stat-box .label { font-size: 11px; color: #8696a0; margin-top: 4px; }
+    .btn { width: 100%; padding: 14px; border: none; border-radius: 8px; font-size: 15px; font-weight: 600; cursor: pointer; margin-bottom: 8px; }
+    .btn-primary { background: #00a884; color: #fff; }
+    .btn-secondary { background: #2a3942; color: #e9edef; border: 1px solid #3b4a54; }
+    .btn-danger { background: #2a3942; color: #ea4335; border: 1px solid #ea4335; }
+    .btn-warning { background: #2a3942; color: #f7c948; border: 1px solid #f7c948; }
+    input, textarea { width: 100%; padding: 14px; background: #2a3942; border: 1px solid #3b4a54; border-radius: 8px; color: #e9edef; font-size: 15px; outline: none; margin-bottom: 8px; }
+    input:focus, textarea:focus { border-color: #00a884; }
+    textarea { min-height: 80px; resize: vertical; }
+    .group-item { background: #2a3942; border-radius: 8px; padding: 14px; margin-bottom: 6px; display: flex; justify-content: space-between; align-items: center; cursor: pointer; border: 1px solid #3b4a54; }
+    .group-item.active { border-color: #00a884; background: #1c3a2a; }
+    .group-item .name { font-size: 14px; flex: 1; }
+    .group-item .check { color: #00a884; font-size: 18px; font-weight: bold; }
+    .log-item { font-size: 12px; color: #8696a0; padding: 4px 0; border-bottom: 1px solid #2a3942; }
+    .toggle-row { display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid #2a3942; }
+    .toggle-label { font-size: 14px; }
+    .toggle { width: 48px; height: 26px; background: #3b4a54; border-radius: 13px; position: relative; cursor: pointer; transition: background 0.3s; }
+    .toggle.on { background: #00a884; }
+    .toggle::after { content: ''; width: 22px; height: 22px; background: #fff; border-radius: 50%; position: absolute; top: 2px; left: 2px; transition: left 0.3s; }
+    .toggle.on::after { left: 24px; }
+    .pairing-code { font-size: 36px; font-weight: bold; letter-spacing: 6px; text-align: center; background: #1f2c33; padding: 20px; border-radius: 12px; border: 2px solid #00a884; margin: 16px 0; }
+    .empty { text-align: center; color: #8696a0; padding: 24px; }
+    .member-item { display: flex; justify-content: space-between; align-items: center; padding: 10px; background: #2a3942; border-radius: 8px; margin-bottom: 6px; }
+    .member-item .info { font-size: 13px; }
+    .member-item .admin-badge { font-size: 10px; background: #00a884; color: #fff; padding: 2px 6px; border-radius: 4px; }
+    .member-actions { display: flex; gap: 6px; }
+    .member-actions button { padding: 6px 10px; border: none; border-radius: 6px; font-size: 12px; cursor: pointer; }
+    .loading { text-align: center; padding: 20px; color: #8696a0; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>🤖 WhatsApp Grup Yönetici</h1>
+    <div class="sub" id="headerStatus">Bağlanıyor...</div>
+  </div>
+
+  <!-- ANA SAYFA -->
+  <div class="page active" id="page-home">
+    <div class="card" id="connectCard">
+      <div class="card-title">Bağlantı</div>
+      <div id="connectArea">
+        <input type="tel" id="phoneInput" placeholder="905XXXXXXXXX" maxlength="15">
+        <button class="btn btn-primary" onclick="doConnect()">Bağlan</button>
+      </div>
+      <div id="pairingArea" style="display:none">
+        <p style="text-align:center;color:#8696a0;margin-bottom:8px">Eşleştirme Kodu:</p>
+        <div class="pairing-code" id="pairingCode" onclick="copyCode()">--</div>
+        <p style="text-align:center;color:#8696a0;font-size:12px">Kopyalamak için dokun<br>WhatsApp → Bağlı Cihazlar → Telefon Numarasıyla Bağla</p>
+      </div>
+    </div>
+
+    <div id="mainPanel" style="display:none">
+      <div class="card">
+        <div class="card-title">📊 İstatistikler</div>
+        <div class="stat-row">
+          <div class="stat-box"><div class="num" id="statDeleted">0</div><div class="label">Silinen</div></div>
+          <div class="stat-box"><div class="num" id="statWelcome">0</div><div class="label">Hoş Geldin</div></div>
+          <div class="stat-box"><div class="num" id="statRules">0</div><div class="label">Kural</div></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">📋 Aktif Grup</div>
+        <div id="groupList"><div class="empty">Yükleniyor...</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODERASYON -->
+  <div class="page" id="page-mod">
+    <div class="card">
+      <div class="card-title">🛡️ Grup İşlemleri</div>
+      <button class="btn btn-secondary" onclick="sendRules()">📢 Kural Gönder</button>
+      <button class="btn btn-warning" onclick="closeGroup()">🔒 Grubu Kapat</button>
+      <button class="btn btn-secondary" onclick="openGroup()">🔓 Grubu Aç</button>
+      <button class="btn btn-secondary" onclick="pauseGroup()">⏸️ Botu Duraklat</button>
+    </div>
+    <div class="card">
+      <div class="card-title">👥 Üyeler</div>
+      <input type="text" id="memberSearch" placeholder="Üye ara..." oninput="searchMembers()">
+      <div id="memberList"><div class="empty">Grup seçin</div></div>
+    </div>
+  </div>
+
+  <!-- MESAJ -->
+  <div class="page" id="page-msg">
+    <div class="card">
+      <div class="card-title">💬 Mesaj Gönder</div>
+      <textarea id="msgText" placeholder="Gruba gönderilecek mesaj..."></textarea>
+      <button class="btn btn-primary" onclick="sendMessage()">Gönder</button>
+    </div>
+    <div class="card">
+      <div class="card-title">📢 Duyuru Gönder</div>
+      <textarea id="announceText" placeholder="Duyuru metni..."></textarea>
+      <button class="btn btn-secondary" onclick="sendAnnouncement()">📢 Duyuru Gönder</button>
+    </div>
+  </div>
+
+  <!-- LOG -->
+  <div class="page" id="page-log">
+    <div class="card">
+      <div class="card-title">📝 İşlem Geçmişi</div>
+      <div id="logList"><div class="empty">Henüz işlem yok</div></div>
+    </div>
+  </div>
+
+  <!-- AYARLAR -->
+  <div class="page" id="page-settings">
+    <div class="card">
+      <div class="card-title">⚙️ Otomasyon</div>
+      <div class="toggle-row">
+        <span class="toggle-label">Hoş Geldin Mesajı</span>
+        <div class="toggle on" id="toggleWelcome" onclick="toggleAuto('welcome')"></div>
+      </div>
+      <div class="toggle-row">
+        <span class="toggle-label">Fiyatsız İlan Silme</span>
+        <div class="toggle on" id="toggleNoPrice" onclick="toggleAuto('noPrice')"></div>
+      </div>
+      <div class="toggle-row">
+        <span class="toggle-label">Kural Hatırlatma</span>
+        <div class="toggle on" id="toggleRules" onclick="toggleAuto('rules')"></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">🔄 Bot</div>
+      <button class="btn btn-warning" onclick="restartBot()">🔄 Bot Restart</button>
+    </div>
+  </div>
+
+  <!-- TABS -->
+  <div class="tabs">
+    <div class="tab active" onclick="switchTab('home')"><span class="tab-icon">🏠</span>Ana</div>
+    <div class="tab" onclick="switchTab('mod')"><span class="tab-icon">🛡️</span>Moderasyon</div>
+    <div class="tab" onclick="switchTab('msg')"><span class="tab-icon">💬</span>Mesaj</div>
+    <div class="tab" onclick="switchTab('log')"><span class="tab-icon">📝</span>Log</div>
+    <div class="tab" onclick="switchTab('settings')"><span class="tab-icon">⚙️</span>Ayarlar</div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const API = '';
+    let socket = null;
+    let activeGroupId = null;
+    let groups = [];
+    let logs = [];
+    let members = [];
+
+    // Socket.IO bağlantısı
+    try {
+      socket = io({ transports: ['websocket', 'polling'] });
+      socket.on('status', (data) => updateStatus(data));
+      socket.on('groups', (g) => { groups = g; renderGroups(); });
+      socket.on('qr', (qr) => console.log('QR received'));
+      socket.on('pairing_code', (code) => showPairingCode(code));
+      socket.on('log', (data) => addLog(data));
+    } catch(e) {}
+
+    // Durum polling
+    setInterval(fetchStatus, 5000);
+    fetchStatus();
+
+    async function fetchStatus() {
+      try {
+        const res = await fetch(API + '/api/status');
+        const data = await res.json();
+        updateStatus(data);
+        if (data.pairingCode) showPairingCode(data.pairingCode);
+      } catch(e) {}
+    }
+
+    function updateStatus(data) {
+      const el = document.getElementById('headerStatus');
+      if (data.connected) {
+        el.innerHTML = '<span class="status-dot online"></span>Bağlı - Bot Aktif';
+        document.getElementById('connectCard').style.display = 'none';
+        document.getElementById('mainPanel').style.display = 'block';
+        if (data.groups && data.groups.length) { groups = data.groups; renderGroups(); }
+        if (data.stats) {
+          document.getElementById('statDeleted').textContent = data.stats.messagesDeleted || 0;
+          document.getElementById('statWelcome').textContent = data.stats.welcomesSent || 0;
+          document.getElementById('statRules').textContent = data.stats.rulesReminded || 0;
+        }
+        if (data.config) {
+          setToggle('toggleWelcome', data.config.welcome);
+          setToggle('toggleNoPrice', data.config.noPrice);
+          setToggle('toggleRules', data.config.rules);
+        }
+      } else {
+        el.innerHTML = '<span class="status-dot offline"></span>Bağlı Değil';
+        document.getElementById('connectCard').style.display = 'block';
+        document.getElementById('mainPanel').style.display = 'none';
+      }
+    }
+
+    function showPairingCode(code) {
+      document.getElementById('connectArea').style.display = 'none';
+      document.getElementById('pairingArea').style.display = 'block';
+      document.getElementById('pairingCode').textContent = code;
+    }
+
+    function copyCode() {
+      const code = document.getElementById('pairingCode').textContent;
+      navigator.clipboard.writeText(code).then(() => alert('Kopyalandı: ' + code));
+    }
+
+    async function doConnect() {
+      const phone = document.getElementById('phoneInput').value.replace(/[^0-9]/g, '');
+      if (!phone) { alert('Telefon numarası girin'); return; }
+      await fetch(API + '/api/connect', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({phoneNumber: phone}) });
+      document.getElementById('connectArea').innerHTML = '<div class="loading">Eşleştirme kodu bekleniyor...</div>';
+    }
+
+    function renderGroups() {
+      const el = document.getElementById('groupList');
+      if (!groups.length) { el.innerHTML = '<div class="empty">Grup bulunamadı</div>'; return; }
+      el.innerHTML = groups.map(g => `<div class="group-item ${g.id === activeGroupId ? 'active' : ''}" onclick="selectGroup('${g.id}')"><span class="name">${g.name}</span>${g.id === activeGroupId ? '<span class="check">✓</span>' : ''}</div>`).join('');
+    }
+
+    async function selectGroup(id) {
+      activeGroupId = id;
+      await fetch(API + '/api/set-active-group', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({groupId: id}) });
+      renderGroups();
+      loadMembers();
+    }
+
+    async function loadMembers() {
+      if (!activeGroupId) return;
+      try {
+        const res = await fetch(API + '/api/members?groupId=' + activeGroupId);
+        const data = await res.json();
+        members = data.members || [];
+        renderMembers(members);
+      } catch(e) {}
+    }
+
+    function renderMembers(list) {
+      const el = document.getElementById('memberList');
+      if (!list.length) { el.innerHTML = '<div class="empty">Üye yok</div>'; return; }
+      el.innerHTML = list.map(m => `<div class="member-item"><div class="info">${m.name || m.number} ${m.isAdmin ? '<span class="admin-badge">Admin</span>' : ''}</div><div class="member-actions"><button style="background:#f7c948;color:#111" onclick="muteMember('${m.id}')">🔇</button><button style="background:#ea4335;color:#fff" onclick="removeMember('${m.id}')">🚫</button></div></div>`).join('');
+    }
+
+    function searchMembers() {
+      const q = document.getElementById('memberSearch').value.toLowerCase();
+      const filtered = members.filter(m => (m.name || m.number).toLowerCase().includes(q));
+      renderMembers(filtered);
+    }
+
+    async function sendRules() { if (!activeGroupId) { alert('Grup seçin'); return; } await fetch(API + '/api/send-rules', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({groupId: activeGroupId}) }); alert('Kurallar gönderildi'); }
+    async function closeGroup() { if (!activeGroupId) return; await fetch(API + '/api/close-group', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({groupId: activeGroupId}) }); alert('Grup kapatıldı'); }
+    async function openGroup() { if (!activeGroupId) return; await fetch(API + '/api/open-group', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({groupId: activeGroupId}) }); alert('Grup açıldı'); }
+    async function pauseGroup() { if (!activeGroupId) return; await fetch(API + '/api/pause-group', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({groupId: activeGroupId}) }); alert('Bot duraklatıldı'); }
+
+    async function sendMessage() {
+      if (!activeGroupId) { alert('Grup seçin'); return; }
+      const msg = document.getElementById('msgText').value;
+      if (!msg) return;
+      await fetch(API + '/api/send-message', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({groupId: activeGroupId, message: msg}) });
+      document.getElementById('msgText').value = '';
+      alert('Gönderildi');
+    }
+
+    async function sendAnnouncement() {
+      if (!activeGroupId) { alert('Grup seçin'); return; }
+      const msg = document.getElementById('announceText').value;
+      if (!msg) return;
+      const full = '📢 *DUYURU*\n━━━━━━━━━━━━━━━━\n\n' + msg + '\n\n🛡️ Grup Yönetimi';
+      await fetch(API + '/api/send-message', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({groupId: activeGroupId, message: full}) });
+      document.getElementById('announceText').value = '';
+      alert('Duyuru gönderildi');
+    }
+
+    async function muteMember(id) { await fetch(API + '/api/mute-member', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({groupId: activeGroupId, memberId: id}) }); alert('Susturuldu'); }
+    async function removeMember(id) { if (!confirm('Bu üye çıkarılacak?')) return; await fetch(API + '/api/remove-member', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({groupId: activeGroupId, memberId: id}) }); loadMembers(); }
+
+    function addLog(data) {
+      const icon = data.type === 'welcome' ? '👋' : data.type === 'deleted' ? '🗑️' : '📢';
+      logs.unshift({ text: `${icon} ${data.user || ''} - ${data.group || ''}`, time: new Date().toLocaleTimeString('tr-TR') });
+      if (logs.length > 50) logs = logs.slice(0, 50);
+      renderLogs();
+    }
+
+    function renderLogs() {
+      const el = document.getElementById('logList');
+      if (!logs.length) { el.innerHTML = '<div class="empty">Henüz işlem yok</div>'; return; }
+      el.innerHTML = logs.map(l => `<div class="log-item">[${l.time}] ${l.text}</div>`).join('');
+    }
+
+    function toggleAuto(type) {
+      const el = document.getElementById('toggle' + type.charAt(0).toUpperCase() + type.slice(1));
+      const isOn = el.classList.contains('on');
+      el.classList.toggle('on');
+      fetch(API + '/api/automation', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({type, enabled: !isOn}) });
+    }
+
+    function setToggle(id, val) {
+      const el = document.getElementById(id);
+      if (val) el.classList.add('on'); else el.classList.remove('on');
+    }
+
+    async function restartBot() { if (!confirm('Bot restart edilecek?')) return; await fetch(API + '/api/restart', { method: 'POST' }); alert('Restart edildi'); }
+
+    function switchTab(name) {
+      document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      document.getElementById('page-' + name).classList.add('active');
+      event.currentTarget.classList.add('active');
+      if (name === 'mod') loadMembers();
+    }
+  </script>
+</body>
+</html>

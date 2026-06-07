@@ -208,15 +208,12 @@ async function handleMessage(msg) {
   } catch(e) {}
 }
 
-// Ana sayfa
+// Static dosyalar
+app.use(express.static(path.join(__dirname, 'public')));
+
+// Ana sayfa - Web Panel
 app.get('/', (req, res) => {
-  res.json({
-    name: 'WhatsApp Grup Yonetici Bot',
-    status: isReady ? 'connected' : 'disconnected',
-    uptime: process.uptime(),
-    groups: connectedGroups.length,
-    stats
-  });
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
 // API
