@@ -176,6 +176,9 @@ async function handleMessage(msg) {
     const chatId = msg.key.remoteJid;
     if (!chatId || !chatId.endsWith('@g.us')) return;
     if (pausedGroups.has(chatId)) return;
+    
+    debugLog('handleMsg: chatId=' + chatId + ' activeGroupId=' + activeGroupId);
+    
     if (activeGroupId && chatId !== activeGroupId) return;
 
     const isFromMe = msg.key.fromMe;
