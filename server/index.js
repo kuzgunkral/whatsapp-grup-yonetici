@@ -208,8 +208,8 @@ async function handleMessage(msg) {
       return;
     }
 
-    // Adminler muaf (GEÇİCİ KAPALI - TEST İÇİN)
-    // if (isAdmin) return;
+    // Adminler muaf
+    if (isAdmin) return;
 
     // Admin reklam onayı: admin belirli kelimeleri yazarsa son fiyatsız mesajı muaf et
     if (isAdmin && msgText) {
