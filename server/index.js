@@ -213,6 +213,18 @@ async function handleGroupJoin(update) {
   }
 }
 
+// Grup mesajı silme helper - participant alanını garanti et
+function getDeleteKey(msg) {
+  const key = { ...msg.key };
+  // Grup mesajlarında participant zorunlu (yoksa "sadece benden sil" olur)
+  if (key.remoteJid && key.remoteJid.endsWith('@g.us')) {
+    if (!key.participant) {
+      key.participant = msg.key.participant || msg.participant || msg.author || undefined;
+    }
+  }
+  return key;
+}
+
 async function handleMessage(msg) {
   try {
     if (msg.messageTimestamp && msg.messageTimestamp < botStartTime - 5) return;
@@ -227,9 +239,9 @@ async function handleMessage(msg) {
     const isFromMe = msg.key.fromMe;
     let msgText = '';
     if (msg.message) {
-      msgText = msg.message.conversation || msg.message?.extendedTextMessage?.text || msg.message?.imageMessage?.caption || msg.message?.videoMessage?.caption || '';
+      msgText = msg.message.conversation || msg.message?.extendedTextMessage?.text || msg.message?.imageMessage?.caption || msg.message?.videoMessage?.caption || msg.message?.documentMessage?.caption || msg.message?.documentWithCaptionMessage?.message?.documentMessage?.caption || '';
     }
-    const hasMedia = !!(msg.message?.imageMessage || msg.message?.videoMessage);
+    const hasMedia = !!(msg.message?.imageMessage || msg.message?.videoMessage || msg.message?.documentMessage || msg.message?.documentWithCaptionMessage || msg.message?.stickerMessage || msg.message?.audioMessage || msg.message?.viewOnceMessage || msg.message?.viewOnceMessageV2);
 
     // Bot'un kendi mesajlarını atla
     if (isFromMe && msgText && (msgText.includes('Grup Yönetimi') || msgText.includes('tespit edildi') || msgText.includes('susturulm') || msgText.includes('━━━'))) return;
@@ -247,7 +259,7 @@ async function handleMessage(msg) {
 
     // Susturulan üye kontrolü
     if (mutedUsers.has(userId) && !isAdmin) {
-      try { await sock.sendMessage(chatId, { delete: msg.key }); } catch(e) {}
+      try { await sock.sendMessage(chatId, { delete: getDeleteKey(msg) }); } catch(e) {}
       return;
     }
 
@@ -311,9 +323,9 @@ async function handleMessage(msg) {
         spamTracker[userId].adCount++;
         if (!spamTracker[userId].ozelUyari) {
           spamTracker[userId].ozelUyari = true;
-          try { await sock.sendMessage(userId, { text: `⚠️ 1 dakikada 1 ilan atabilirsiniz. Lütfen bekleyiniz.\n\n🛡️ _Grup Yönetimi_` }); } catch(e) {}
+          try { await sock.sendMessage(userId, { text: `⚠️ 1 dakikada 1 ilan atabilirsiniz. Lütfen bekleyiniz.\n\n🛡️ _${groupName} Yönetimi_` }); } catch(e) {}
         }
-        const delKey = msg.key;
+        const delKey = getDeleteKey(msg);
         const tryDel = async (a) => { try { await sock.sendMessage(chatId, { delete: delKey }); } catch(e) { if (a < 20) setTimeout(() => tryDel(a+1), 3000); } };
         tryDel(1);
         stats.messagesDeleted++;
@@ -325,9 +337,9 @@ async function handleMessage(msg) {
         if (spamTracker[userId].count > 10) {
           if (!spamTracker[userId].warned10) {
             spamTracker[userId].warned10 = true;
-            try { await sock.sendMessage(chatId, { text: `⚠️ 10 adetten fazla resim yüklenemez.\n🛡️ _Grup Yönetimi_` }); } catch(e) {}
+            try { await sock.sendMessage(chatId, { text: `⚠️ 10 adetten fazla resim yüklenemez.\n🛡️ _${groupName} Yönetimi_` }); } catch(e) {}
           }
-          const delKey = msg.key;
+          const delKey = getDeleteKey(msg);
           const tryDel = async (a) => { try { await sock.sendMessage(chatId, { delete: delKey }); } catch(e) { if (a < 20) setTimeout(() => tryDel(a+1), 3000); } };
           tryDel(1);
           stats.messagesDeleted++;
@@ -337,7 +349,7 @@ async function handleMessage(msg) {
 
       // Fiyatsız resim → 10 limit + 30sn bekle
       if (spamTracker[userId].count > 10) {
-        const delKey = msg.key;
+        const delKey = getDeleteKey(msg);
         const tryDel = async (a) => { try { await sock.sendMessage(chatId, { delete: delKey }); } catch(e) { if (a < 20) setTimeout(() => tryDel(a+1), 3000); } };
         tryDel(1);
         stats.messagesDeleted++;
@@ -345,7 +357,7 @@ async function handleMessage(msg) {
       }
 
       // Fiyatsız ilk 10 resim → 30sn bekle (fiyat geç gelebilir)
-      const delKey = msg.key;
+      const delKey = getDeleteKey(msg);
       const delUserId = userId;
       const delMsgId = msg.key.id;
       const delChatId = chatId;
@@ -391,7 +403,7 @@ async function handleMessage(msg) {
     // === ÖZELDEN YAZ FİLTRESİ ===
     const ozeldenIfadeler = ['özelden yaz', 'özelden', 'dm', 'özel mesaj', 'özele gel', 'fiyat özelden', 'fiyat dm', 'fiyat özel', 'özelim'];
     if (ozeldenIfadeler.some(kw => msgLower.includes(kw)) && !hasMedia) {
-      await sock.sendMessage(chatId, { text: `⚠️ Fiyatı grupta belirtin! Özelden fiyat vermek yasaktır.\n🛡️ _Grup Yönetimi_` });
+      await sock.sendMessage(chatId, { text: `⚠️ Fiyatı grupta belirtin! Özelden fiyat vermek yasaktır.\n🛡️ _${groupName} Yönetimi_` });
       return;
     }
 
@@ -420,7 +432,7 @@ async function handleMessage(msg) {
     quota.warnedTime = Date.now();
     try { await sock.sendMessage(userId, { text: `⚠️ İlanınıza fiyat girmediniz. 1 dakika içerisinde silinecektir.\nLütfen fiyat girerek tekrar gönderiniz.\n\n🛡️ _${groupName} Yönetimi_` }); } catch(e) {}
 
-    const msgKey = msg.key;
+    const msgKey = getDeleteKey(msg);
     const delUserId2 = userId;
     const delText2 = msgText;
     const delGroupName2 = groupName;
@@ -478,7 +490,7 @@ app.post('/api/send-rules', async (req, res) => {
   if (!sock || !isReady) return res.status(500).json({ error: 'Not connected' });
   try {
     const meta = await sock.groupMetadata(groupId);
-    await sock.sendMessage(groupId, { text: `📢 *${meta.subject}*\n━━━━━━━━━━━━━━━━\n\n📋 *Grup Kuralları*\n\n• İlanlarınızda mutlaka fiyat belirtin\n• Aynı ilanı tekrar tekrar atmayın\n• Saygılı olalım\n\n⚠️ Kurallara uymayan ilanlar silinecektir.\n\n🛡️ Grup Yönetimi` });
+    await sock.sendMessage(groupId, { text: `📢 *${meta.subject}*\n━━━━━━━━━━━━━━━━\n\n📋 *Grup Kuralları*\n\n• İlanlarınızda mutlaka fiyat belirtin\n• Aynı ilanı tekrar tekrar atmayın\n• Saygılı olalım\n\n⚠️ Kurallara uymayan ilanlar silinecektir.\n\n🛡️ _${meta.subject} Yönetimi_` });
     res.json({ success: true });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
@@ -488,6 +500,17 @@ app.post('/api/send-message', async (req, res) => {
   if (!sock || !isReady) return res.status(500).json({ error: 'Not connected' });
   try {
     await sock.sendMessage(groupId, { text: message });
+    res.json({ success: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/send-announcement', async (req, res) => {
+  const { groupId, message } = req.body;
+  if (!sock || !isReady) return res.status(500).json({ error: 'Not connected' });
+  try {
+    const meta = await sock.groupMetadata(groupId);
+    const formatted = `📢 *DUYURU*\n━━━━━━━━━━━━━━━━\n\n${message}\n\n🛡️ _${meta.subject} Yönetimi_`;
+    await sock.sendMessage(groupId, { text: formatted });
     res.json({ success: true });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
@@ -566,7 +589,7 @@ app.post('/api/clean-no-price', async (req, res) => {
       
       if (shouldDelete) {
         try { 
-          await sock.sendMessage(groupId, { delete: msg.key }); 
+          await sock.sendMessage(groupId, { delete: getDeleteKey(msg) }); 
           deletedCount++;
           
           // Toplu log: aynı kullanıcının ilanlarını grupla

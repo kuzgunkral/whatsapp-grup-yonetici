@@ -307,8 +307,7 @@
       if (!activeGroupId) { alert('Grup seçin'); return; }
       const msg = document.getElementById('announceText').value;
       if (!msg) return;
-      const full = '📢 *DUYURU*\n━━━━━━━━━━━━━━━━\n\n' + msg + '\n\n🛡️ Grup Yönetimi';
-      await fetch(API + '/api/send-message', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({groupId: activeGroupId, message: full}) });
+      await fetch(API + '/api/send-announcement', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({groupId: activeGroupId, message: msg}) });
       document.getElementById('announceText').value = '';
       alert('Duyuru gönderildi');
     }

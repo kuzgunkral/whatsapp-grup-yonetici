@@ -69,7 +69,7 @@ class BotBridge extends EventEmitter {
   setActiveGroup(groupId) { this._post('/api/set-active-group', { groupId }); }
   sendMessage(groupId, message) { this._post('/api/send-message', { groupId, message }); }
   sendRules(groupId) { this._post('/api/send-rules', { groupId }); }
-  sendAnnouncement(groupId, message) { this._post('/api/send-message', { groupId, message: `📢 *DUYURU*\n━━━━━━━━━━━━━━━━\n\n${message}\n\n🛡️ Grup Yönetimi` }); }
+  sendAnnouncement(groupId, message) { this._post('/api/send-announcement', { groupId, message }); }
   closeGroup(groupId) { this._post('/api/close-group', { groupId }); }
   openGroup(groupId) { this._post('/api/open-group', { groupId }); }
   pauseGroup(groupId) { this._post('/api/pause-group', { groupId }); }
