@@ -131,7 +131,17 @@
   <!-- LOG -->
   <div class="page" id="page-log">
     <div class="card">
-      <div class="card-title">📝 İşlem Geçmişi</div>
+      <div class="card-title">📂 Silinen İlanlar</div>
+      <div style="display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap;">
+        <button class="btn btn-secondary" onclick="loadDeletedAds()" style="flex:1;margin:0">🔄 Yenile</button>
+        <button class="btn btn-danger" onclick="clearAllLogs()" style="flex:1;margin:0">🗑️ Logları Temizle</button>
+      </div>
+      <input type="text" id="logSearchInput" placeholder="Kullanıcı, numara veya mesaj ara..." oninput="filterDeletedAds()" style="margin-bottom:8px">
+      <div id="adCount" style="font-size:12px;color:#8696a0;margin-bottom:8px;"></div>
+      <div id="deletedAdsList"><div class="empty">Yükleniyor...</div></div>
+    </div>
+    <div class="card">
+      <div class="card-title">📝 Canlı Log</div>
       <div id="logList"><div class="empty">Henüz işlem yok</div></div>
     </div>
   </div>
@@ -333,12 +343,102 @@
 
     async function restartBot() { if (!confirm('Bot restart edilecek?')) return; await fetch(API + '/api/restart', { method: 'POST' }); alert('Restart edildi'); }
 
+    // ======= SİLİNEN İLANLAR =======
+    let allDeletedAds = [];
+
+    async function loadDeletedAds() {
+      try {
+        const res = await fetch(API + '/api/deleted-ads');
+        const data = await res.json();
+        allDeletedAds = data.data || [];
+        renderDeletedAds(allDeletedAds);
+      } catch(e) {
+        document.getElementById('deletedAdsList').innerHTML = '<div class="empty">Yüklenemedi</div>';
+      }
+    }
+
+    function filterDeletedAds() {
+      const q = document.getElementById('logSearchInput').value.toLowerCase();
+      if (!q) { renderDeletedAds(allDeletedAds); return; }
+      const filtered = allDeletedAds.filter(ad =>
+        (ad.kullanici && ad.kullanici.toLowerCase().includes(q)) ||
+        (ad.telefon && ad.telefon.includes(q)) ||
+        (ad.mesaj && ad.mesaj.toLowerCase().includes(q))
+      );
+      renderDeletedAds(filtered);
+    }
+
+    function renderDeletedAds(ads) {
+      const el = document.getElementById('deletedAdsList');
+      const countEl = document.getElementById('adCount');
+      if (!ads || !ads.length) { 
+        el.innerHTML = '<div class="empty">Silinen ilan yok 🎉</div>'; 
+        countEl.textContent = '';
+        return; 
+      }
+      countEl.textContent = `📋 ${ads.length} silinen ilan`;
+      
+      el.innerHTML = ads.map(ad => {
+        const telefon = ad.telefon || (ad.kullanici || '');
+        const telefonGoster = telefon ? `<div style="font-size:11px;color:#53bdeb;">📞 +${telefon}</div>` : '';
+        const topluBilgi = ad.topluAdet ? `<div style="font-size:11px;color:#f7c948;">📦 ${ad.topluAdet} resimli toplu ilan</div>` : '';
+        
+        return `<div style="background:#2a3942;border-radius:8px;padding:12px;margin-bottom:8px;" id="ad-${ad.id}">
+          <div style="font-size:13px;color:#e9edef;margin-bottom:2px;">👤 <strong>${ad.kullanici || 'Bilinmeyen'}</strong></div>
+          ${telefonGoster}
+          ${topluBilgi}
+          <div style="font-size:11px;color:#8696a0;margin:4px 0;">📅 ${ad.tarih || ''} ${ad.saat || ''} | ${ad.grup || ''}</div>
+          <div style="font-size:12px;color:#d1d7db;background:#0b141a;padding:8px;border-radius:6px;word-break:break-word;margin:6px 0;">${ad.mesaj || '(boş)'}</div>
+          <div style="font-size:11px;color:#8696a0;">📌 ${ad.sebep || 'Fiyatsız ilan'}</div>
+          <div style="display:flex;gap:4px;margin-top:8px;flex-wrap:wrap;">
+            <button onclick="restoreAd('${ad.id}')" style="flex:1;padding:8px;background:#1c3a2a;border:1px solid #00a884;border-radius:6px;color:#00a884;cursor:pointer;font-size:11px;">🔄 Geri Yükle</button>
+            <button onclick="restoreAsAd('${ad.id}')" style="flex:1;padding:8px;background:#1c2a3a;border:1px solid #53bdeb;border-radius:6px;color:#53bdeb;cursor:pointer;font-size:11px;">📢 Reklam Yükle</button>
+            <button onclick="deleteLog('${ad.id}')" style="flex:1;padding:8px;background:#3a1c1c;border:1px solid #ea4335;border-radius:6px;color:#ea4335;cursor:pointer;font-size:11px;">🗑️ Sil</button>
+          </div>
+        </div>`;
+      }).join('');
+    }
+
+    async function restoreAd(id) {
+      if (!confirm('Bu ilan gruba geri yüklensin mi?')) return;
+      const res = await fetch(API + '/api/restore-ad', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({id}) });
+      const data = await res.json();
+      if (data.success) { document.getElementById('ad-'+id)?.remove(); addLog({type:'restored', user:'İlan geri yüklendi', group:''}); }
+      else alert('Hata: ' + (data.error || 'Bilinmeyen'));
+    }
+
+    async function restoreAsAd(id) {
+      if (!confirm('Bu ilan reklam olarak geri yüklensin mi?')) return;
+      const res = await fetch(API + '/api/restore-as-ad', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({id}) });
+      const data = await res.json();
+      if (data.success) { document.getElementById('ad-'+id)?.remove(); addLog({type:'restored', user:'Reklam olarak yüklendi', group:''}); }
+      else alert('Hata: ' + (data.error || 'Bilinmeyen'));
+    }
+
+    async function deleteLog(id) {
+      if (!confirm('Bu log silinsin mi?')) return;
+      await fetch(API + '/api/deleted-ads/' + id, { method:'DELETE' });
+      document.getElementById('ad-'+id)?.remove();
+    }
+
+    async function clearAllLogs() {
+      if (!confirm('TÜM silinen ilan logları silinsin mi? Bu geri alınamaz!')) return;
+      const res = await fetch(API + '/api/clear-all-logs', { method:'POST' });
+      const data = await res.json();
+      if (data.success) {
+        allDeletedAds = [];
+        document.getElementById('deletedAdsList').innerHTML = '<div class="empty">Loglar temizlendi 🎉</div>';
+        document.getElementById('adCount').textContent = '';
+      }
+    }
+
     function switchTab(name) {
       document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
       document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
       document.getElementById('page-' + name).classList.add('active');
       event.currentTarget.classList.add('active');
       if (name === 'mod') loadMembers();
+      if (name === 'log') loadDeletedAds();
     }
   </script>
 </body>
