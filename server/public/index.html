@@ -379,9 +379,9 @@
       countEl.textContent = `📋 ${ads.length} silinen ilan`;
       
       el.innerHTML = ads.map(ad => {
-        const telefon = ad.telefon || (ad.kullanici || '');
-        const telefonGoster = telefon ? `<div style="font-size:11px;color:#53bdeb;">📞 +${telefon}</div>` : '';
-        const topluBilgi = ad.topluAdet ? `<div style="font-size:11px;color:#f7c948;">📦 ${ad.topluAdet} resimli toplu ilan</div>` : '';
+        const telefon = ad.telefon || '';
+        const telefonGoster = telefon && /^\d{10,}$/.test(telefon) ? `<div style="font-size:11px;color:#53bdeb;">📞 +${telefon}</div>` : '';
+        const topluBilgi = ad.topluAdet && ad.topluAdet > 1 ? `<div style="font-size:11px;color:#f7c948;">📦 ${ad.topluAdet} resimli toplu ilan</div>` : '';
         
         return `<div style="background:#2a3942;border-radius:8px;padding:12px;margin-bottom:8px;" id="ad-${ad.id}">
           <div style="font-size:13px;color:#e9edef;margin-bottom:2px;">👤 <strong>${ad.kullanici || 'Bilinmeyen'}</strong></div>

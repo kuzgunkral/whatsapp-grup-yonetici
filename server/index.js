@@ -666,12 +666,22 @@ app.get('/api/deleted-ads', (req, res) => {
     );
   }
   // medyaData'yi response'dan cikar (cok buyuk olabilir)
-  const lightResults = results.map(r => ({
-    ...r,
-    medyaData: undefined,
-    medyaVar: !!(r.medyaData),
-    telefon: r.telefon || (r.kullanici || '')
-  }));
+  const lightResults = results.map(r => {
+    // Telefon numarasını bul: telefon alanı > kullaniciId'den çıkar > kullanici alanı (numara ise)
+    let tel = r.telefon || '';
+    if (!tel && r.kullaniciId && r.kullaniciId.includes('@')) {
+      tel = r.kullaniciId.split('@')[0];
+    }
+    if (!tel && r.kullanici && /^\d{10,}$/.test(r.kullanici)) {
+      tel = r.kullanici;
+    }
+    return {
+      ...r,
+      medyaData: undefined,
+      medyaVar: !!(r.medyaData),
+      telefon: tel
+    };
+  });
   res.json({ success: true, count: lightResults.length, data: lightResults });
 });
 
