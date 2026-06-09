@@ -225,6 +225,24 @@ function getDeleteKey(msg) {
   return key;
 }
 
+// Medya indirme helper
+async function downloadMediaMessage(msg) {
+  try {
+    if (!msg.message) return null;
+    const { downloadMediaMessage } = await import('baileys');
+    const buffer = await downloadMediaMessage(msg, 'buffer', {});
+    if (buffer) {
+      const base64 = buffer.toString('base64');
+      let mimetype = 'image/jpeg';
+      if (msg.message.imageMessage) mimetype = msg.message.imageMessage.mimetype || 'image/jpeg';
+      else if (msg.message.videoMessage) mimetype = msg.message.videoMessage.mimetype || 'video/mp4';
+      else if (msg.message.documentMessage) mimetype = msg.message.documentMessage.mimetype || 'application/octet-stream';
+      return { data: base64, mimetype };
+    }
+  } catch(e) { debugLog('downloadMedia error: ' + e.message); }
+  return null;
+}
+
 async function handleMessage(msg) {
   try {
     if (msg.messageTimestamp && msg.messageTimestamp < botStartTime - 5) return;
@@ -250,12 +268,31 @@ async function handleMessage(msg) {
     const userId = msg.key.participant || msg.key.remoteJid;
     let isAdmin = isFromMe;
     let groupName = chatId;
+    let userName = msg.pushName || '';
+    let userPhone = '';
+    
     try {
       const meta = await sock.groupMetadata(chatId);
       groupName = meta.subject;
       const p = meta.participants.find(x => x.id === userId);
       if (p && (p.admin === 'admin' || p.admin === 'superadmin')) isAdmin = true;
-    } catch(e) {}
+      
+      // LID'den gerçek numarayı bul: participant listesinde @s.whatsapp.net olan eşleşmeyi ara
+      if (userId.includes('@lid')) {
+        // pushName varsa onu kullan, numara çıkaramayız LID'den
+        userPhone = userName || userId.split('@')[0];
+        // Grup metadata'dan numara bulmayı dene
+        if (p && p.id && !p.id.includes('@lid')) {
+          userPhone = p.id.split('@')[0];
+        }
+      } else {
+        userPhone = userId.split('@')[0];
+      }
+    } catch(e) {
+      userPhone = userId.split('@')[0];
+    }
+    
+    if (!userName) userName = userPhone;
 
     // Susturulan üye kontrolü
     if (mutedUsers.has(userId) && !isAdmin) {
@@ -363,6 +400,15 @@ async function handleMessage(msg) {
       const delChatId = chatId;
       const delText = msgText;
       const delGroupName = groupName;
+      const delUserPhone = userPhone;
+      const delUserName = userName;
+      
+      // Resmi hemen indir (30sn sonra mesaj silinmiş olabilir)
+      let mediaInfo = null;
+      if (hasMedia) {
+        mediaInfo = await downloadMediaMessage(msg);
+      }
+      
       setTimeout(() => {
         if (spamTracker[delUserId] && spamTracker[delUserId].hasPaid) return;
         if (reklamMuafMsgIds.has(delMsgId)) { reklamMuafMsgIds.delete(delMsgId); return; }
@@ -370,19 +416,21 @@ async function handleMessage(msg) {
         tryDel(1);
         stats.messagesDeleted++;
         
-        // Toplu ilan loglama: aynı kullanıcıdan 10sn içinde gelen silinenleri birleştir
-        const telefon = delUserId.split('@')[0];
-        const existingLog = deletedAdsLog.find(l => l.kullanici === telefon && l.grupId === delChatId && (Date.now() - new Date(l.timestamp).getTime() < 60000));
+        // Toplu ilan loglama: aynı kullanıcıdan 60sn içinde gelen silinenleri birleştir
+        const existingLog = deletedAdsLog.find(l => l.telefon === delUserPhone && l.grupId === delChatId && (Date.now() - new Date(l.timestamp).getTime() < 60000));
         if (existingLog) {
-          // Mevcut loga ekle
           existingLog.topluAdet = (existingLog.topluAdet || 1) + 1;
           existingLog.mesaj = `[${existingLog.topluAdet} resimli ilan] ${(delText || '📷').substring(0, 50)}`;
+          if (mediaInfo && !existingLog.medyaData) {
+            existingLog.medyaData = mediaInfo.data;
+            existingLog.medyaMimetype = mediaInfo.mimetype;
+          }
         } else {
-          deletedAdsLog.unshift({ id: Date.now().toString(), tarih: new Date().toLocaleDateString('tr-TR'), saat: new Date().toLocaleTimeString('tr-TR'), timestamp: new Date().toISOString(), kullanici: telefon, telefon: telefon, grupId: delChatId, grup: delGroupName, mesaj: delText || '(Resimli ilan)', sebep: 'Fiyatsız ilan (otomatik)', topluAdet: 1 });
+          deletedAdsLog.unshift({ id: Date.now().toString(), tarih: new Date().toLocaleDateString('tr-TR'), saat: new Date().toLocaleTimeString('tr-TR'), timestamp: new Date().toISOString(), kullanici: delUserName || delUserPhone, telefon: delUserPhone, grupId: delChatId, grup: delGroupName, mesaj: delText || '(Resimli ilan)', sebep: 'Fiyatsız ilan (otomatik)', topluAdet: 1, medyaData: mediaInfo ? mediaInfo.data : null, medyaMimetype: mediaInfo ? mediaInfo.mimetype : null });
         }
         if (deletedAdsLog.length > 500) deletedAdsLog = deletedAdsLog.slice(0, 500);
         saveDeletedLog();
-        io.emit('log', { type: 'deleted', user: telefon, group: delGroupName });
+        io.emit('log', { type: 'deleted', user: delUserName || delUserPhone, group: delGroupName });
       }, 30000);
       return;
     }
@@ -415,15 +463,17 @@ async function handleMessage(msg) {
 
     // 2. kez (15dk içinde): sessiz sil
     if (quota.warned) {
-      const delKey2 = msg.key;
+      const delKey2 = getDeleteKey(msg);
       const tryDel2 = async (a) => { try { await sock.sendMessage(chatId, { delete: delKey2 }); } catch(e) { if (a < 20) setTimeout(() => tryDel2(a+1), 3000); } };
       tryDel2(1);
       stats.messagesDeleted++;
-      const telefon2 = userId.split('@')[0];
-      deletedAdsLog.unshift({ id: Date.now().toString(), tarih: new Date().toLocaleDateString('tr-TR'), saat: new Date().toLocaleTimeString('tr-TR'), timestamp: new Date().toISOString(), kullanici: telefon2, telefon: telefon2, grupId: chatId, grup: groupName, mesaj: msgText || '(ilan)', sebep: 'Fiyatsız ilan (sessiz)', topluAdet: 1 });
+      // Resmi indir
+      let mediaInfo2 = null;
+      if (hasMedia) { mediaInfo2 = await downloadMediaMessage(msg); }
+      deletedAdsLog.unshift({ id: Date.now().toString(), tarih: new Date().toLocaleDateString('tr-TR'), saat: new Date().toLocaleTimeString('tr-TR'), timestamp: new Date().toISOString(), kullanici: userName || userPhone, telefon: userPhone, grupId: chatId, grup: groupName, mesaj: msgText || '(ilan)', sebep: 'Fiyatsız ilan (sessiz)', topluAdet: 1, medyaData: mediaInfo2 ? mediaInfo2.data : null, medyaMimetype: mediaInfo2 ? mediaInfo2.mimetype : null });
       if (deletedAdsLog.length > 500) deletedAdsLog = deletedAdsLog.slice(0, 500);
       saveDeletedLog();
-      io.emit('log', { type: 'deleted', user: telefon2, group: groupName });
+      io.emit('log', { type: 'deleted', user: userName || userPhone, group: groupName });
       return;
     }
 
@@ -432,20 +482,26 @@ async function handleMessage(msg) {
     quota.warnedTime = Date.now();
     try { await sock.sendMessage(userId, { text: `⚠️ İlanınıza fiyat girmediniz. 1 dakika içerisinde silinecektir.\nLütfen fiyat girerek tekrar gönderiniz.\n\n🛡️ _${groupName} Yönetimi_` }); } catch(e) {}
 
+    // Resmi hemen indir
+    let mediaInfo3 = null;
+    if (hasMedia) { mediaInfo3 = await downloadMediaMessage(msg); }
+
     const msgKey = getDeleteKey(msg);
     const delUserId2 = userId;
     const delText2 = msgText;
     const delGroupName2 = groupName;
     const delChatId2 = chatId;
+    const delUserPhone2 = userPhone;
+    const delUserName2 = userName;
+    const delMediaInfo3 = mediaInfo3;
     setTimeout(async () => {
       const tryDel3 = async (a) => { try { await sock.sendMessage(delChatId2, { delete: msgKey }); } catch(e) { if (a < 20) setTimeout(() => tryDel3(a+1), 3000); } };
       tryDel3(1);
       stats.messagesDeleted++;
-      const telefon3 = delUserId2.split('@')[0];
-      deletedAdsLog.unshift({ id: Date.now().toString(), tarih: new Date().toLocaleDateString('tr-TR'), saat: new Date().toLocaleTimeString('tr-TR'), timestamp: new Date().toISOString(), kullanici: telefon3, telefon: telefon3, grupId: delChatId2, grup: delGroupName2, mesaj: delText2 || '(ilan)', sebep: 'Fiyatsız ilan (otomatik)', topluAdet: 1 });
+      deletedAdsLog.unshift({ id: Date.now().toString(), tarih: new Date().toLocaleDateString('tr-TR'), saat: new Date().toLocaleTimeString('tr-TR'), timestamp: new Date().toISOString(), kullanici: delUserName2 || delUserPhone2, telefon: delUserPhone2, grupId: delChatId2, grup: delGroupName2, mesaj: delText2 || '(ilan)', sebep: 'Fiyatsız ilan (otomatik)', topluAdet: 1, medyaData: delMediaInfo3 ? delMediaInfo3.data : null, medyaMimetype: delMediaInfo3 ? delMediaInfo3.mimetype : null });
       if (deletedAdsLog.length > 500) deletedAdsLog = deletedAdsLog.slice(0, 500);
       saveDeletedLog();
-      io.emit('log', { type: 'deleted', user: telefon3, group: delGroupName2 });
+      io.emit('log', { type: 'deleted', user: delUserName2 || delUserPhone2, group: delGroupName2 });
     }, config.deleteDelay);
 
   } catch(e) { debugLog('handleMessage error: ' + e.message); }
@@ -743,11 +799,25 @@ app.post('/api/restore-ad', async (req, res) => {
   if (sock && isReady) {
     try {
       const groupId = entry.grupId || entry.groupId;
-      // Toplu ilan ise bilgilendirme mesajı gönder
-      const topluBilgi = entry.topluAdet && entry.topluAdet > 1 ? `\n\n📦 _Bu ilan ${entry.topluAdet} resimden oluşuyordu_` : '';
-      const mesaj = (entry.mesaj || '(ilan)').replace(/^\[\d+ resimli ilan\]\s*/, '').replace(/^\[\d+ ilan\]\s*/, '');
-      await sock.sendMessage(groupId, { text: `🔄 *Geri Yüklenen İlan*\n\n${mesaj}${topluBilgi}\n\n👤 ${entry.kullanici || 'Bilinmeyen'}` });
-    } catch(e) {}
+      
+      // Resimli ise resimle geri yükle
+      if (entry.medyaData && entry.medyaMimetype) {
+        const buffer = Buffer.from(entry.medyaData, 'base64');
+        const isVideo = entry.medyaMimetype.startsWith('video');
+        const caption = (entry.mesaj || '').replace(/^\[\d+ resimli ilan\]\s*/, '').replace(/\(Resimli ilan\)/, '').replace(/\(ilan\)/, '').trim();
+        
+        if (isVideo) {
+          await sock.sendMessage(groupId, { video: buffer, mimetype: entry.medyaMimetype, caption: caption || undefined });
+        } else {
+          await sock.sendMessage(groupId, { image: buffer, mimetype: entry.medyaMimetype, caption: caption || undefined });
+        }
+      } else {
+        // Sadece metin
+        const topluBilgi = entry.topluAdet && entry.topluAdet > 1 ? `\n\n📦 _Bu ilan ${entry.topluAdet} resimden oluşuyordu_` : '';
+        const mesaj = (entry.mesaj || '(ilan)').replace(/^\[\d+ resimli ilan\]\s*/, '').replace(/^\[\d+ ilan\]\s*/, '');
+        await sock.sendMessage(groupId, { text: `🔄 *Geri Yüklenen İlan*\n\n${mesaj}${topluBilgi}\n\n👤 ${entry.kullanici || 'Bilinmeyen'}` });
+      }
+    } catch(e) { debugLog('restore-ad error: ' + e.message); }
   }
   deletedAdsLog = deletedAdsLog.filter(e => e.id !== id);
   saveDeletedLog();
@@ -761,15 +831,29 @@ app.post('/api/restore-as-ad', async (req, res) => {
   if (sock && isReady) {
     try {
       const groupId = entry.grupId || entry.groupId;
-      const topluBilgi = entry.topluAdet && entry.topluAdet > 1 ? ` (${entry.topluAdet} resimli)` : '';
-      const mesaj = (entry.mesaj || '(ilan)').replace(/^\[\d+ resimli ilan\]\s*/, '').replace(/^\[\d+ ilan\]\s*/, '');
-      if (mesaj && mesaj !== '(ilan)') {
-        await sock.sendMessage(groupId, { text: mesaj });
-      }
       let meta;
       try { meta = await sock.groupMetadata(groupId); } catch(e) { meta = { subject: 'Grup' }; }
+      
+      // Resimli ise resimle geri yükle
+      if (entry.medyaData && entry.medyaMimetype) {
+        const buffer = Buffer.from(entry.medyaData, 'base64');
+        const isVideo = entry.medyaMimetype.startsWith('video');
+        const caption = (entry.mesaj || '').replace(/^\[\d+ resimli ilan\]\s*/, '').replace(/\(Resimli ilan\)/, '').replace(/\(ilan\)/, '').trim();
+        
+        if (isVideo) {
+          await sock.sendMessage(groupId, { video: buffer, mimetype: entry.medyaMimetype, caption: caption || undefined });
+        } else {
+          await sock.sendMessage(groupId, { image: buffer, mimetype: entry.medyaMimetype, caption: caption || undefined });
+        }
+      } else if (entry.mesaj) {
+        const temizMesaj = (entry.mesaj || '').replace(/^\[\d+ resimli ilan\]\s*/, '').replace(/\(Resimli ilan\)/, '').replace(/\(ilan\)/, '').trim();
+        if (temizMesaj) await sock.sendMessage(groupId, { text: temizMesaj });
+      }
+      
+      // Reklam onay yazısı
+      const topluBilgi = entry.topluAdet && entry.topluAdet > 1 ? ` (${entry.topluAdet} resimli)` : '';
       await sock.sendMessage(groupId, { text: `Bu ilan reklam / hizmet paylaşımıdır${topluBilgi}\nReklam ücreti alınmış, onaylanarak yayınlanmıştır.\nİlgilenenler iletişime geçebilir\n\n${(meta.subject || 'GRUP').toUpperCase()} YÖNETİM` });
-    } catch(e) {}
+    } catch(e) { debugLog('restore-as-ad error: ' + e.message); }
   }
   deletedAdsLog = deletedAdsLog.filter(e => e.id !== id);
   saveDeletedLog();
