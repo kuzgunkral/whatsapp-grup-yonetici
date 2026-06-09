@@ -27,8 +27,12 @@ const HomeScreen = () => {
   const [isServiceRunning, setIsServiceRunning] = useState(false);
   const [stats, setStats] = useState({ messagesDeleted: 0, welcomesSent: 0, rulesReminded: 0, spammersRemoved: 0 });
   const [logs, setLogs] = useState([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    // Hemen status kontrol et
+    botBridge.init();
+    
     // Kayıtlı grubu yükle
     AsyncStorage.getItem('activeGroupId').then(savedId => {
       if (savedId) {
@@ -40,6 +44,7 @@ const HomeScreen = () => {
     AsyncStorage.getItem('phoneNumber').then(saved => { if (saved) setPhoneNumber(saved); });
 
     const onStatus = (data) => {
+      setLoading(false);
       setIsConnected(data.connected);
       if (data.groups) setGroups(data.groups);
       if (data.stats) setStats(data.stats);
@@ -126,6 +131,16 @@ const HomeScreen = () => {
 
   // Bağlantı yoksa - telefon numarası girişi veya pairing code göster
   if (!isConnected) {
+    // İlk yüklenme — bekliyor
+    if (loading) {
+      return (
+        <View style={[styles.container, styles.centerContent]}>
+          <Text style={styles.phoneTitle}>🤖 WhatsApp Grup Yönetici</Text>
+          <Text style={{ color: '#8696a0', fontSize: 14, marginTop: 12 }}>Sunucuya bağlanılıyor...</Text>
+        </View>
+      );
+    }
+    
     return (
       <ScrollView style={styles.container} contentContainerStyle={styles.centerContent}>
         {pairingCode ? (
