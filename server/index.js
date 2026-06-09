@@ -443,6 +443,17 @@ app.post('/api/clean-no-price', async (req, res) => {
       if (!msg.key || msg.key.fromMe) continue;
       if (msg.messageTimestamp && msg.messageTimestamp < sixHoursAgo) continue;
       
+      // Admin kontrolü
+      const senderId = msg.key.participant || msg.key.remoteJid;
+      try {
+        const meta = await sock.groupMetadata(groupId);
+        const p = meta.participants.find(x => x.id === senderId);
+        if (p && (p.admin === 'admin' || p.admin === 'superadmin')) continue;
+      } catch(e) {}
+      
+      // Reklam muaf kontrolü
+      if (reklamMuafMsgIds.has(msg.key.id)) continue;
+      
       const text = msg.message?.conversation || msg.message?.extendedTextMessage?.text || msg.message?.imageMessage?.caption || msg.message?.videoMessage?.caption || '';
       const hasMedia = !!(msg.message?.imageMessage || msg.message?.videoMessage);
       
