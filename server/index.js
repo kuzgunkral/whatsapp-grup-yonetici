@@ -208,14 +208,10 @@ async function handleMessage(msg) {
       return;
     }
 
-    // Adminler muaf
-    if (isAdmin) return;
-
     // Admin reklam onayı: admin belirli kelimeleri yazarsa son fiyatsız mesajı muaf et
     if (isAdmin && msgText) {
       const reklamKelimeleri = ['bu ilan reklam', 'reklam ücreti', 'ücretli reklam', 'sponsor', 'ücreti alınmıştır', 'ücretli ilan', 'onaylı ilan', 'onaylanarak yayınlanmıştır'];
       if (reklamKelimeleri.some(kw => msgText.toLowerCase().includes(kw))) {
-        // Son fiyatsız mesajları muaf et
         Object.keys(spamTracker).forEach(uid => {
           if (!spamTracker[uid].hasPaid && spamTracker[uid].lastTime && (Date.now() - spamTracker[uid].lastTime < 35000)) {
             spamTracker[uid].hasPaid = true;
@@ -224,6 +220,9 @@ async function handleMessage(msg) {
         return;
       }
     }
+
+    // Adminler muaf
+    if (isAdmin) return;
 
     if (!config.automation.noPrice) return;
 
