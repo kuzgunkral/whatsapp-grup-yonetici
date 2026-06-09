@@ -102,11 +102,10 @@
     <div class="card">
       <div class="card-title">🛡️ Grup İşlemleri</div>
       <button class="btn btn-secondary" onclick="sendRules()">📢 Kural Gönder</button>
-      <button class="btn btn-danger" onclick="cleanNoPrice()">🗑️ Fiyatsız İlanları Sil</button>
+      <button class="btn btn-danger" onclick="cleanNoPrice()">🗑️ Tüm Fiyatsız İlanları Sil</button>
       <button class="btn btn-warning" onclick="closeGroup()">🔒 Grubu Kapat</button>
       <button class="btn btn-secondary" onclick="openGroup()">🔓 Grubu Aç</button>
       <button class="btn btn-secondary" onclick="pauseGroup()">⏸️ Botu Duraklat</button>
-      <button class="btn btn-danger" onclick="cleanNoPrice()">🗑️ Tüm Fiyatsız İlanları Sil</button>
     </div>
     <div class="card">
       <div class="card-title">👥 Üyeler</div>
@@ -173,7 +172,7 @@
   <script>
     const API = '';
     let socket = null;
-    let activeGroupId = null;
+    let activeGroupId = localStorage.getItem('activeGroupId') || null;
     let groups = [];
     let logs = [];
     let members = [];
@@ -251,6 +250,7 @@
 
     async function selectGroup(id) {
       activeGroupId = id;
+      localStorage.setItem('activeGroupId', id);
       await fetch(API + '/api/set-active-group', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({groupId: id}) });
       renderGroups();
       loadMembers();

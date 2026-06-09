@@ -419,14 +419,55 @@ app.post('/api/set-active-group', (req, res) => {
   res.json({ success: true });
 });
 
-// Tüm fiyatsız ilanları sil (son 100 mesaj)
+// Tüm fiyatsız ilanları sil (son 6 saat)
 app.post('/api/clean-no-price', async (req, res) => {
   const { groupId } = req.body;
   if (!sock || !isReady) return res.status(500).json({ error: 'Not connected' });
   try {
     let deletedCount = 0;
-    // Baileys 7'de store yok, direkt silme yapamayız ama en azından bilgi dönelim
-    res.json({ success: true, count: deletedCount, message: 'Otomatik silme aktif - yeni ilanlar kontrol ediliyor' });
+    const sixHoursAgo = Math.floor(Date.now() / 1000) - (6 * 3600);
+    
+    // Son mesajları çek
+    const messages = await sock.fetchMessages(groupId, 200);
+    if (!messages || !messages.length) {
+      return res.json({ success: true, count: 0, message: 'Mesaj bulunamadı' });
+    }
+    
+    const fiyatRegex = /\d+[\.,]?\d*\s*(tl|lira|₺|k\b|bin\b|m\b|milyon\b|milyar\b|son\b)/i;
+    const fiyatKelime = /(fiyat|tane|adet)\s*:?\s*\d+[\.,]?\d*|\d+[\.,]?\d*\s*(fiyat|tane|adet)/i;
+    const fiyatBuyuk = /\d{4,9}/;
+    const kmExclude = /km|model|kilometre/i;
+    const phoneExclude = /0?5\d{9}/;
+    
+    for (const msg of messages) {
+      if (!msg.key || msg.key.fromMe) continue;
+      if (msg.messageTimestamp && msg.messageTimestamp < sixHoursAgo) continue;
+      
+      const text = msg.message?.conversation || msg.message?.extendedTextMessage?.text || msg.message?.imageMessage?.caption || msg.message?.videoMessage?.caption || '';
+      const hasMedia = !!(msg.message?.imageMessage || msg.message?.videoMessage);
+      
+      const hasFiyat = fiyatRegex.test(text) || fiyatKelime.test(text) || 
+        ((fiyatBuyuk.test(text) || /\d{1,3}[\.,]\d{3}/.test(text)) && !kmExclude.test(text) && !phoneExclude.test(text));
+      
+      if (hasFiyat) continue;
+      
+      // Resimli + fiyatsız → sil
+      if (hasMedia) {
+        try { await sock.sendMessage(groupId, { delete: msg.key }); deletedCount++; } catch(e) {}
+        continue;
+      }
+      
+      // Yazılı ilan + fiyatsız → sil
+      if (text.length > 15) {
+        const ilanKeywords = ['satılık', 'satilik', 'satıyorum', 'satiyorum', 'acil', 'temiz', 'sorunsuz', 'sahibinden', 'takas', 'devren', 'kiralık'];
+        if (ilanKeywords.some(kw => text.toLowerCase().includes(kw))) {
+          try { await sock.sendMessage(groupId, { delete: msg.key }); deletedCount++; } catch(e) {}
+        }
+      }
+    }
+    
+    stats.messagesDeleted += deletedCount;
+    res.json({ success: true, count: deletedCount });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
