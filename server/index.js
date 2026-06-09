@@ -255,14 +255,13 @@ async function handleMessage(msg) {
       // Fiyat varsa hasPaid işaretle
       if (hasFiyat) { spamTracker[userId].hasPaid = true; spamTracker[userId].paidTime = Date.now(); }
 
-      // İlk ilan mı yoksa 2. ilan mı?
-      // İlk ilan: firstAdTime 0 ise veya 1dk geçtiyse
+      // İlk ilan başlangıcı
       if (spamTracker[userId].adCount === 0) {
         spamTracker[userId].adCount = 1;
         spamTracker[userId].firstAdTime = now;
       }
       
-      // 5sn içinde gelenler aynı toplu ilan (ilk ilanın parçası)
+      // 5sn içinde gelenler aynı toplu ilan
       const isPartOfFirst = (now - spamTracker[userId].firstAdTime < 5000);
       
       // 2. ilan (5sn'den sonra, 1dk'dan önce gelen) → sil + DM 1 kere
@@ -279,12 +278,23 @@ async function handleMessage(msg) {
         return;
       }
 
-      // İlk ilanın parçası - 10 limit kontrolü
-      if (spamTracker[userId].count > 10) {
-        if (!spamTracker[userId].warned10) {
-          spamTracker[userId].warned10 = true;
-          try { await sock.sendMessage(chatId, { text: `⚠️ 10 adetten fazla resim yüklenemez.\n🛡️ _Grup Yönetimi_` }); } catch(e) {}
+      // Fiyatlı ilan → ilk 10 kalır, 11+ silinir
+      if (spamTracker[userId].hasPaid) {
+        if (spamTracker[userId].count > 10) {
+          if (!spamTracker[userId].warned10) {
+            spamTracker[userId].warned10 = true;
+            try { await sock.sendMessage(chatId, { text: `⚠️ 10 adetten fazla resim yüklenemez.\n🛡️ _Grup Yönetimi_` }); } catch(e) {}
+          }
+          const delKey = msg.key;
+          const tryDel = async (a) => { try { await sock.sendMessage(chatId, { delete: delKey }); } catch(e) { if (a < 20) setTimeout(() => tryDel(a+1), 3000); } };
+          tryDel(1);
+          stats.messagesDeleted++;
         }
+        return;
+      }
+
+      // Fiyatsız resim → 10 limit + 30sn bekle
+      if (spamTracker[userId].count > 10) {
         const delKey = msg.key;
         const tryDel = async (a) => { try { await sock.sendMessage(chatId, { delete: delKey }); } catch(e) { if (a < 20) setTimeout(() => tryDel(a+1), 3000); } };
         tryDel(1);
@@ -292,21 +302,17 @@ async function handleMessage(msg) {
         return;
       }
 
-      // Fiyatlı (toplu dahil) → geç
-      if (spamTracker[userId].hasPaid) return;
-
-      // Fiyatsız resim → 30sn bekle (fiyat geç gelebilir, admin reklam yazabilir)
+      // Fiyatsız ilk 10 resim → 30sn bekle (fiyat geç gelebilir)
       const delKey = msg.key;
       const delUserId = userId;
       const delMsgId = msg.key.id;
       setTimeout(() => {
-        // 30sn sonra: fiyat gelmiş mi veya reklam muafiyeti var mı kontrol et
         if (spamTracker[delUserId] && spamTracker[delUserId].hasPaid) return;
         if (reklamMuafMsgIds.has(delMsgId)) { reklamMuafMsgIds.delete(delMsgId); return; }
         const tryDel = async (a) => { try { await sock.sendMessage(chatId, { delete: delKey }); } catch(e) { if (a < 20) setTimeout(() => tryDel(a+1), 3000); } };
         tryDel(1);
+        stats.messagesDeleted++;
       }, 30000);
-      stats.messagesDeleted++;
       return;
     }
 
