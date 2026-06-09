@@ -75,6 +75,22 @@ const ModerationScreen = () => {
     ]);
   };
 
+  const handleCleanNoPrice = () => {
+    const gid = botBridge.groups[0]?.id;
+    if (!gid) { Alert.alert('Uyarı', 'Grup seçilmedi'); return; }
+    Alert.alert('Fiyatsız İlanları Sil', 'Son 24 saatteki tüm fiyatsız ilanlar silinecek ve loga kaydedilecek.', [
+      { text: 'İptal', style: 'cancel' },
+      { text: 'Sil', style: 'destructive', onPress: async () => {
+        const res = await botBridge.cleanNoPrice(gid);
+        if (res && res.success) {
+          Alert.alert('Tamamlandı', `${res.count} fiyatsız ilan silindi`);
+        } else {
+          Alert.alert('Bilgi', res?.message || res?.error || 'İşlem tamamlanamadı');
+        }
+      }},
+    ]);
+  };
+
   const handleOpenGroup = () => botBridge.openGroup(botBridge.groups[0]?.id);
   const handlePause = () => botBridge.pauseGroup(botBridge.groups[0]?.id);
 
@@ -97,6 +113,9 @@ const ModerationScreen = () => {
             <Text style={styles.btnText}>⏸️ Duraklat</Text>
           </TouchableOpacity>
         </View>
+        <TouchableOpacity style={[styles.btn, styles.btnRed, { marginTop: 10 }]} onPress={handleCleanNoPrice}>
+          <Text style={styles.btnText}>🗑️ Tüm Fiyatsız İlanları Sil</Text>
+        </TouchableOpacity>
       </View>
 
       <View style={styles.section}>

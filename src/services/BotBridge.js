@@ -81,12 +81,14 @@ class BotBridge extends EventEmitter {
   async getDeletedAds() { const data = await this._get('/api/deleted-ads'); if (data.data) this.emit('deleted_ads', data.data); }
   async restoreAd(id) { const res = await this._post('/api/restore-ad', { id }); if (res.success) this.emit('restore_done', id); }
   async restoreAsAd(id) { const res = await this._post('/api/restore-as-ad', { id }); if (res.success) this.emit('restore_done', id); }
+  async deleteLog(id) { await fetch(`${SERVER_URL}/api/deleted-ads/${id}`, { method: 'DELETE' }); }
   async clearLogs() { await this._post('/api/clear-all-logs'); }
   async clearMediaCache() { const res = await this._post('/api/clear-media-cache'); if (res.cleared !== undefined) this.emit('cache_cleared', res.cleared); }
   setAutomation(type, enabled) { this._post('/api/automation', { type, enabled }); }
   setDeleteDelay(seconds) { this._post('/api/set-delete-delay', { delay: seconds }); }
   setRuleInterval(hours) { this._post('/api/set-rule-interval', { hours }); }
   setCustomRule(message) { this._post('/api/set-rule-message', { message }); }
+  async cleanNoPrice(groupId) { return await this._post('/api/clean-no-price', { groupId }); }
   restart() { this._post('/api/restart'); }
 }
 
