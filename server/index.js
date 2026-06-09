@@ -158,11 +158,27 @@ async function connect(phoneNumber) {
     sock.ev.on('messages.upsert', (m) => {
       debugLog('messages.upsert received: ' + (m.messages ? m.messages.length : 0) + ' msgs, type: ' + m.type);
       if (m.type !== 'notify') return;
-      m.messages.forEach(msg => handleMessage(msg));
+      m.messages.forEach(msg => {
+        // Protocol mesajı: üye ekleme bildirimini yakala
+        if (msg.messageStubType === 27 || msg.messageStubType === 'GROUP_PARTICIPANT_ADD') {
+          // Grup katılım bildirimi
+          if (config.automation.welcome && msg.key.remoteJid && msg.key.remoteJid.endsWith('@g.us')) {
+            const participants = msg.messageStubParameters || [];
+            if (participants.length > 0) {
+              debugLog('Detected group join via messageStub: ' + JSON.stringify(participants));
+              handleGroupJoin({ id: msg.key.remoteJid, participants, action: 'add' });
+            }
+          }
+          return;
+        }
+        handleMessage(msg);
+      });
     });
 
     sock.ev.on('group-participants.update', (update) => {
-      if (!config.automation.welcome || update.action !== 'add') return;
+      debugLog('group-participants.update: action=' + update.action + ' group=' + update.id + ' participants=' + JSON.stringify(update.participants));
+      if (!config.automation.welcome) { debugLog('Welcome disabled, skipping'); return; }
+      if (update.action !== 'add') return;
       handleGroupJoin(update);
     });
 
@@ -182,14 +198,19 @@ async function loadGroups() {
 
 async function handleGroupJoin(update) {
   try {
+    debugLog('handleGroupJoin: sending welcome to ' + update.id);
     const meta = await sock.groupMetadata(update.id);
     for (const p of update.participants) {
       const name = p.split('@')[0];
-      await sock.sendMessage(update.id, { text: `👋 Hoş geldin *${name}*!\n\nGrubumuza katıldığın için teşekkürler 🎉\n\n📌 *Hatırlatma:*\n• İlan verirken fiyat belirtin\n• Saygılı olalım\n\n_İyi alışverişler!_ 🛒\n🛡️ _${meta.subject} Yönetimi_` });
+      const welcomeMsg = `👋 Hoş geldin *${name}*!\n\nGrubumuza katıldığın için teşekkürler 🎉\n\n📌 *Hatırlatma:*\n• İlan verirken fiyat belirtin\n• Saygılı olalım\n\n_İyi alışverişler!_ 🛒\n🛡️ _${meta.subject} Yönetimi_`;
+      await sock.sendMessage(update.id, { text: welcomeMsg });
       stats.welcomesSent++;
       io.emit('log', { type: 'welcome', user: name, group: meta.subject });
+      debugLog('Welcome sent to: ' + name + ' in ' + meta.subject);
     }
-  } catch(e) {}
+  } catch(e) {
+    debugLog('handleGroupJoin ERROR: ' + e.message);
+  }
 }
 
 async function handleMessage(msg) {
