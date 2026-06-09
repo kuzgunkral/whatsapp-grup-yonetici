@@ -459,7 +459,12 @@ app.post('/api/clean-no-price', async (req, res) => {
       
       // Resimli + fiyatsız → sil
       if (hasMedia) {
-        try { await sock.sendMessage(groupId, { delete: msg.key }); deletedCount++; } catch(e) {}
+        try { 
+          await sock.sendMessage(groupId, { delete: msg.key }); 
+          deletedCount++;
+          const userId = msg.key.participant || msg.key.remoteJid;
+          deletedAdsLog.unshift({ id: Date.now().toString() + deletedCount, tarih: new Date().toLocaleDateString('tr-TR'), saat: new Date().toLocaleTimeString('tr-TR'), timestamp: new Date().toISOString(), kullanici: userId.split('@')[0], grupId: groupId, mesaj: text || '(Resimli ilan)', sebep: 'Manuel silme (fiyatsız)' });
+        } catch(e) {}
         continue;
       }
       
@@ -467,12 +472,18 @@ app.post('/api/clean-no-price', async (req, res) => {
       if (text.length > 15) {
         const ilanKeywords = ['satılık', 'satilik', 'satıyorum', 'satiyorum', 'acil', 'temiz', 'sorunsuz', 'sahibinden', 'takas', 'devren', 'kiralık'];
         if (ilanKeywords.some(kw => text.toLowerCase().includes(kw))) {
-          try { await sock.sendMessage(groupId, { delete: msg.key }); deletedCount++; } catch(e) {}
+          try { 
+            await sock.sendMessage(groupId, { delete: msg.key }); 
+            deletedCount++;
+            const userId = msg.key.participant || msg.key.remoteJid;
+            deletedAdsLog.unshift({ id: Date.now().toString() + deletedCount, tarih: new Date().toLocaleDateString('tr-TR'), saat: new Date().toLocaleTimeString('tr-TR'), timestamp: new Date().toISOString(), kullanici: userId.split('@')[0], grupId: groupId, mesaj: text, sebep: 'Manuel silme (fiyatsız)' });
+          } catch(e) {}
         }
       }
     }
     
     stats.messagesDeleted += deletedCount;
+    saveDeletedLog();
     res.json({ success: true, count: deletedCount });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
