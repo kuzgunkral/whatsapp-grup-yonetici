@@ -1,12 +1,14 @@
 /**
  * Ayarlar Ekranı - Otomasyon toggle + Süre ayarları
+ * Ayarlar AsyncStorage + sunucu ile senkronize kalır
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, Switch, TextInput, TouchableOpacity, Alert,
 } from 'react-native';
 import Slider from '@react-native-community/slider';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import botBridge from '../services/BotBridge';
 
 const SettingsScreen = () => {
@@ -16,27 +18,70 @@ const SettingsScreen = () => {
   const [deleteDelay, setDeleteDelay] = useState(60);
   const [ruleInterval, setRuleInterval] = useState(6);
   const [customRule, setCustomRule] = useState('');
+  const [loaded, setLoaded] = useState(false);
+
+  // Sayfa açılışında ayarları yükle (önce lokal, sonra sunucu)
+  useEffect(() => {
+    loadSettings();
+    const onStatus = (data) => {
+      if (data.config) {
+        setWelcome(data.config.welcome ?? true);
+        setNoPrice(data.config.noPrice ?? true);
+        setRules(data.config.rules ?? true);
+      }
+    };
+    botBridge.on('status', onStatus);
+    return () => botBridge.off('status', onStatus);
+  }, []);
+
+  const loadSettings = async () => {
+    try {
+      const saved = await AsyncStorage.getItem('botSettings');
+      if (saved) {
+        const s = JSON.parse(saved);
+        setWelcome(s.welcome ?? true);
+        setNoPrice(s.noPrice ?? true);
+        setRules(s.rules ?? true);
+        setDeleteDelay(s.deleteDelay ?? 60);
+        setRuleInterval(s.ruleInterval ?? 6);
+        setCustomRule(s.customRule || '');
+      }
+    } catch (e) {}
+    setLoaded(true);
+  };
+
+  const saveLocal = async (key, value) => {
+    try {
+      const saved = await AsyncStorage.getItem('botSettings');
+      const s = saved ? JSON.parse(saved) : {};
+      s[key] = value;
+      await AsyncStorage.setItem('botSettings', JSON.stringify(s));
+    } catch (e) {}
+  };
 
   const toggle = (type, val) => {
-    if (type === 'welcome') setWelcome(val);
-    if (type === 'noPrice') setNoPrice(val);
-    if (type === 'rules') setRules(val);
+    if (type === 'welcome') { setWelcome(val); saveLocal('welcome', val); }
+    if (type === 'noPrice') { setNoPrice(val); saveLocal('noPrice', val); }
+    if (type === 'rules') { setRules(val); saveLocal('rules', val); }
     botBridge.setAutomation(type, val);
   };
 
   const handleDelayChange = (v) => {
     const s = Math.round(v);
     setDeleteDelay(s);
+    saveLocal('deleteDelay', s);
     botBridge.setDeleteDelay(s);
   };
 
   const handleIntervalChange = (v) => {
     const h = Math.round(v);
     setRuleInterval(h);
+    saveLocal('ruleInterval', h);
     botBridge.setRuleInterval(h);
   };
 
   const handleSaveRule = () => {
+    saveLocal('customRule', customRule);
     botBridge.setCustomRule(customRule);
     Alert.alert('✅', 'Kaydedildi');
   };
@@ -51,6 +96,13 @@ const SettingsScreen = () => {
   const handleClearMedia = () => {
     botBridge.clearMediaCache();
     Alert.alert('✅', 'Medya önbelleği temizlendi');
+  };
+
+  const handleRestart = () => {
+    Alert.alert('Bot Restart', 'Bot yeniden bağlanacak.', [
+      { text: 'İptal', style: 'cancel' },
+      { text: 'Restart', onPress: () => botBridge.restart() },
+    ]);
   };
 
   return (
@@ -127,6 +179,9 @@ const SettingsScreen = () => {
         </TouchableOpacity>
         <TouchableOpacity style={[styles.dataBtn, { borderColor: '#ea0038' }]} onPress={handleClearLogs}>
           <Text style={styles.dataBtnText}>🗑️ Tüm Logları Sil</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={[styles.dataBtn, { borderColor: '#f7c948', marginTop: 4 }]} onPress={handleRestart}>
+          <Text style={[styles.dataBtnText, { color: '#f7c948' }]}>🔄 Bot Restart</Text>
         </TouchableOpacity>
       </View>
 

@@ -13,6 +13,7 @@ import {
   Alert,
   Clipboard,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import botBridge from '../services/BotBridge';
 import backgroundService from '../services/BackgroundService';
 
@@ -28,6 +29,16 @@ const HomeScreen = () => {
   const [logs, setLogs] = useState([]);
 
   useEffect(() => {
+    // Kayıtlı grubu yükle
+    AsyncStorage.getItem('activeGroupId').then(savedId => {
+      if (savedId) {
+        const found = botBridge.groups.find(g => g.id === savedId);
+        if (found) { setActiveGroup(found); botBridge.setActiveGroup(savedId); }
+      }
+    });
+    // Kayıtlı telefon numarasını yükle
+    AsyncStorage.getItem('phoneNumber').then(saved => { if (saved) setPhoneNumber(saved); });
+
     const onStatus = (data) => {
       setIsConnected(data.connected);
       if (data.groups) setGroups(data.groups);
@@ -37,7 +48,16 @@ const HomeScreen = () => {
       setPairingCode(code);
       setShowPhoneInput(false);
     };
-    const onGroups = (g) => setGroups(g);
+    const onGroups = (g) => {
+      setGroups(g);
+      // Kayıtlı grubu aktif et
+      AsyncStorage.getItem('activeGroupId').then(savedId => {
+        if (savedId) {
+          const found = g.find(gr => gr.id === savedId);
+          if (found) { setActiveGroup(found); botBridge.setActiveGroup(savedId); }
+        }
+      });
+    };
     const onLog = (data) => {
       setLogs((prev) => [{
         id: Date.now().toString(),
@@ -75,6 +95,7 @@ const HomeScreen = () => {
       Alert.alert('Uyarı', 'Telefon numaranızı girin (başında ülke kodu ile)');
       return;
     }
+    AsyncStorage.setItem('phoneNumber', phoneNumber);
     try {
       botBridge.init();
       botBridge.on('error', (msg) => Alert.alert('Hata', msg));
@@ -88,6 +109,7 @@ const HomeScreen = () => {
   const handleSelectGroup = (group) => {
     setActiveGroup(group);
     botBridge.setActiveGroup(group.id);
+    AsyncStorage.setItem('activeGroupId', group.id);
   };
 
   const handleRestart = () => {
