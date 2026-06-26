@@ -416,7 +416,7 @@ async function handleMessage(msg) {
         if (!spamTracker[userId].ozelUyari) {
           spamTracker[userId].ozelUyari = true;
           spamTracker[userId].ozelUyariTime = now;
-          try { await sock.sendMessage(realUserId, { text: `⚠️ 1 saatte 1 ilan atabilirsiniz. Lütfen bekleyiniz.\n\n🛡️ _${groupName} Yönetimi_` }); } catch(e) {}
+          try { await sock.sendMessage(realUserId, { text: `⚠️ 1 saatte yalnızca 1 ilan atabilirsiniz. Lütfen bekleyiniz.\n\n🛡️ _${groupName} Yönetimi_` }); } catch(e) {}
         }
         const delKey = getDeleteKey(msg);
         const tryDel = async (a) => { try { await sock.sendMessage(chatId, { delete: delKey }); } catch(e) { if (a < 20) setTimeout(() => tryDel(a+1), 3000); } };
@@ -432,7 +432,7 @@ async function handleMessage(msg) {
             spamTracker[userId].warned10 = true;
             spamTracker[userId].warned10Time = now;
             // Uyarıyı özele at (gruba değil), 1 saatte bir tekrar uyarır
-            try { await sock.sendMessage(realUserId, { text: `⚠️ 1 saatte 10 adetten fazla resim yükleyemezsiniz.\n\n🛡️ _${groupName} Yönetimi_` }); } catch(e) {}
+            try { await sock.sendMessage(realUserId, { text: `⚠️ Tek seferde 10 adetten fazla resim yükleyemezsiniz.\n\n🛡️ _${groupName} Yönetimi_` }); } catch(e) {}
           }
           const delKey = getDeleteKey(msg);
           const tryDel = async (a) => { try { await sock.sendMessage(chatId, { delete: delKey }); } catch(e) { if (a < 20) setTimeout(() => tryDel(a+1), 3000); } };
