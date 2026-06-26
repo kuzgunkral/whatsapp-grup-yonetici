@@ -134,7 +134,7 @@ const MessagesScreen = () => {
         />
         <Text style={styles.charCount}>{pinMsg.length}/5000</Text>
         <TouchableOpacity style={[styles.sendBtn, { backgroundColor: '#f7c948' }]} onPress={handleSendAndPin}>
-          <Text style={[styles.sendBtnText, { color: '#111' }]}>📌 Gönder ve Sabitle</Text>
+          <Text style={[styles.sendBtnText, { color: '#111' }]}>📌 Sabitle</Text>
         </TouchableOpacity>
       </View>
     </ScrollView>
