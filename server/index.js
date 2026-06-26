@@ -364,17 +364,24 @@ async function handleMessage(msg) {
 
     // === TOPLU RESİM + 1DK KURAL ===
     if (hasMedia) {
-      if (!spamTracker[userId]) spamTracker[userId] = { count: 0, lastTime: 0, warned10: false, hasPaid: false, paidTime: 0, ozelUyari: false, firstAdTime: 0, adCount: 0 };
-      const now = Date.now();
-      
-      // 1dk'dan fazla geçtiyse yeni dönem
-      if (now - spamTracker[userId].firstAdTime > 60000) {
-        spamTracker[userId].count = 0;
-        spamTracker[userId].warned10 = false;
-        spamTracker[userId].hasPaid = false;
-        spamTracker[userId].ozelUyari = false;
-        spamTracker[userId].adCount = 0;
-      }
+      if (!spamTracker[userId]) spamTracker[userId] = { count: 0, lastTime: 0, warned10: false, warned10Time: 0, hasPaid: false, paidTime: 0, ozelUyari: false, ozelUyariTime: 0, firstAdTime: 0, adCount: 0 };
+        const now = Date.now();
+        const ONE_HOUR = 60 * 60 * 1000;
+        
+        // 1 saatte bir uyarı flag'lerini sıfırla (kullanıcı tekrar uyarı alabilsin)
+        if (now - spamTracker[userId].warned10Time > ONE_HOUR) {
+          spamTracker[userId].warned10 = false;
+        }
+        if (now - spamTracker[userId].ozelUyariTime > ONE_HOUR) {
+          spamTracker[userId].ozelUyari = false;
+        }
+        
+        // 1 saatten fazla geçtiyse yeni dönem (sayaçlar sıfırlanır)
+        if (now - spamTracker[userId].firstAdTime > ONE_HOUR) {
+          spamTracker[userId].count = 0;
+          spamTracker[userId].hasPaid = false;
+          spamTracker[userId].adCount = 0;
+        }
       
       spamTracker[userId].count++;
       spamTracker[userId].lastTime = now;
@@ -391,12 +398,13 @@ async function handleMessage(msg) {
       // 5sn içinde gelenler aynı toplu ilan
       const isPartOfFirst = (now - spamTracker[userId].firstAdTime < 5000);
       
-      // 2. ilan (5sn'den sonra, 1dk'dan önce gelen) → sil + DM 1 kere
-      if (!isPartOfFirst && (now - spamTracker[userId].firstAdTime < 60000) && spamTracker[userId].adCount >= 1) {
+      // 2. ilan (5sn'den sonra, 1 saatten önce gelen) → sil + DM 1 kere (1 saatte bir tekrar uyarır)
+      if (!isPartOfFirst && (now - spamTracker[userId].firstAdTime < ONE_HOUR) && spamTracker[userId].adCount >= 1) {
         spamTracker[userId].adCount++;
         if (!spamTracker[userId].ozelUyari) {
           spamTracker[userId].ozelUyari = true;
-          try { await sock.sendMessage(realUserId, { text: `⚠️ 1 dakikada 1 ilan atabilirsiniz. Lütfen bekleyiniz.\n\n🛡️ _${groupName} Yönetimi_` }); } catch(e) {}
+          spamTracker[userId].ozelUyariTime = now;
+          try { await sock.sendMessage(realUserId, { text: `⚠️ 1 saatte 1 ilan atabilirsiniz. Lütfen bekleyiniz.\n\n🛡️ _${groupName} Yönetimi_` }); } catch(e) {}
         }
         const delKey = getDeleteKey(msg);
         const tryDel = async (a) => { try { await sock.sendMessage(chatId, { delete: delKey }); } catch(e) { if (a < 20) setTimeout(() => tryDel(a+1), 3000); } };
@@ -410,7 +418,9 @@ async function handleMessage(msg) {
         if (spamTracker[userId].count > 10) {
           if (!spamTracker[userId].warned10) {
             spamTracker[userId].warned10 = true;
-            try { await sock.sendMessage(chatId, { text: `⚠️ 10 adetten fazla resim yüklenemez.\n🛡️ _${groupName} Yönetimi_` }); } catch(e) {}
+            spamTracker[userId].warned10Time = now;
+            // Uyarıyı özele at (gruba değil), 1 saatte bir tekrar uyarır
+            try { await sock.sendMessage(realUserId, { text: `⚠️ 1 saatte 10 adetten fazla resim yükleyemezsiniz.\n\n🛡️ _${groupName} Yönetimi_` }); } catch(e) {}
           }
           const delKey = getDeleteKey(msg);
           const tryDel = async (a) => { try { await sock.sendMessage(chatId, { delete: delKey }); } catch(e) { if (a < 20) setTimeout(() => tryDel(a+1), 3000); } };
