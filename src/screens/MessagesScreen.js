@@ -1,5 +1,5 @@
 /**
- * Mesajlar Ekranı - Duyuru / Kural / Özel Mesaj
+ * Mesajlar Ekranı - Duyuru / Kural / Özel Mesaj / Sabitle
  */
 
 import React, { useState } from 'react';
@@ -11,26 +11,28 @@ import botBridge from '../services/BotBridge';
 const MessagesScreen = () => {
   const [customMsg, setCustomMsg] = useState('');
   const [announcement, setAnnouncement] = useState('');
+  const [pinMsg, setPinMsg] = useState('');
 
   const getGroupId = () => {
-    if (botBridge.groups.length === 0) {
-      Alert.alert('Uyarı', 'Grup yok veya bağlı değil');
-      return null;
-    }
-    return botBridge.groups[0]?.id;
+    const active = botBridge.activeGroupId;
+    if (active) return active;
+    if (botBridge.groups && botBridge.groups.length > 0) return botBridge.groups[0]?.id;
+    Alert.alert('Uyarı', 'Grup yok veya bağlı değil');
+    return null;
   };
 
-  const handleSendRules = () => {
+  const handleSendRules = async () => {
     const gid = getGroupId();
-    if (gid) botBridge.sendRules(gid);
+    if (!gid) return;
+    await botBridge.sendRules(gid);
     Alert.alert('✅', 'Kurallar gönderildi');
   };
 
-  const handleSendCustom = () => {
+  const handleSendCustom = async () => {
     const gid = getGroupId();
     if (!gid) return;
     if (!customMsg.trim()) { Alert.alert('Uyarı', 'Mesaj yazın'); return; }
-    botBridge.sendMessage(gid, customMsg);
+    await botBridge.sendMessage(gid, customMsg);
     Alert.alert('✅', 'Gönderildi');
     setCustomMsg('');
   };
@@ -39,23 +41,39 @@ const MessagesScreen = () => {
     const gid = getGroupId();
     if (!gid) return;
     if (!announcement.trim()) { Alert.alert('Uyarı', 'Duyuru yazın'); return; }
-    const res = await botBridge.sendAnnouncement(gid, announcement);
-    if (res && res.success) {
-      Alert.alert('✅', 'Duyuru gönderildi');
-      setAnnouncement('');
-    } else {
-      Alert.alert('❌', 'Duyuru gönderilemedi');
+    try {
+      const res = await botBridge.sendAnnouncement(gid, announcement);
+      if (res && res.success) {
+        Alert.alert('✅', 'Duyuru gönderildi');
+        setAnnouncement('');
+      } else {
+        Alert.alert('❌', 'Gönderilemedi: ' + (res?.error || 'Bilinmeyen hata'));
+      }
+    } catch (e) {
+      Alert.alert('❌', 'Hata: ' + e.message);
     }
   };
 
-  const handlePinMessage = async () => {
+  const handleSendAndPin = async () => {
     const gid = getGroupId();
     if (!gid) return;
-    const res = await botBridge.pinMessage(gid, null); // sunucu lastSentKeys'ten bulur
-    if (res && res.success) {
-      Alert.alert('📌', 'Son duyuru sabitlendi');
-    } else {
-      Alert.alert('❌', res?.error || 'Sabitleme başarısız. Önce duyuru gönderin.');
+    if (!pinMsg.trim()) { Alert.alert('Uyarı', 'Sabitlenecek mesajı yazın'); return; }
+    try {
+      // 1. Mesajı gönder
+      const res = await botBridge.sendAnnouncement(gid, pinMsg);
+      if (!res || !res.success) { Alert.alert('❌', 'Mesaj gönderilemedi'); return; }
+      // 2. Kısa bekle, sabitle
+      await new Promise(r => setTimeout(r, 1500));
+      const pinRes = await botBridge.pinMessage(gid, res.messageId || null);
+      if (pinRes && pinRes.success) {
+        Alert.alert('📌', 'Mesaj gönderildi ve sabitlendi');
+        setPinMsg('');
+      } else {
+        Alert.alert('⚠️', 'Gönderildi ama sabitleme başarısız:\n' + (pinRes?.error || 'Bilinmeyen hata'));
+        setPinMsg('');
+      }
+    } catch (e) {
+      Alert.alert('❌', 'Hata: ' + e.message);
     }
   };
 
@@ -85,9 +103,9 @@ const MessagesScreen = () => {
       </View>
 
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>📢 Duyuru (5000 karakter)</Text>
+        <Text style={styles.sectionTitle}>📢 Duyuru Gönder</Text>
         <TextInput
-          style={[styles.input, { minHeight: 150 }]}
+          style={[styles.input, { minHeight: 120 }]}
           placeholder="Duyuru metni..."
           placeholderTextColor="#8696a0"
           value={announcement}
@@ -97,11 +115,26 @@ const MessagesScreen = () => {
           textAlignVertical="top"
         />
         <Text style={styles.charCount}>{announcement.length}/5000</Text>
-        <TouchableOpacity style={[styles.sendBtn, { backgroundColor: '#00a884', marginBottom: 8 }]} onPress={handleSendAnnouncement}>
+        <TouchableOpacity style={styles.sendBtn} onPress={handleSendAnnouncement}>
           <Text style={styles.sendBtnText}>📢 Duyuru Gönder</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={[styles.sendBtn, { backgroundColor: '#f7c948' }]} onPress={handlePinMessage}>
-          <Text style={[styles.sendBtnText, { color: '#111' }]}>📌 Son Duyuruyu Sabitle</Text>
+      </View>
+
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>📌 Sabitle</Text>
+        <TextInput
+          style={[styles.input, { minHeight: 120 }]}
+          placeholder="Sabitlenecek mesajı yazın..."
+          placeholderTextColor="#8696a0"
+          value={pinMsg}
+          onChangeText={setPinMsg}
+          multiline
+          maxLength={5000}
+          textAlignVertical="top"
+        />
+        <Text style={styles.charCount}>{pinMsg.length}/5000</Text>
+        <TouchableOpacity style={[styles.sendBtn, { backgroundColor: '#f7c948' }]} onPress={handleSendAndPin}>
+          <Text style={[styles.sendBtnText, { color: '#111' }]}>📌 Gönder ve Sabitle</Text>
         </TouchableOpacity>
       </View>
     </ScrollView>

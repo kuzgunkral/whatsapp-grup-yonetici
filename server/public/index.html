@@ -305,22 +305,33 @@
       alert('Gönderildi');
     }
 
-    async function sendAnnouncementAndPin() {
+    async function sendAnnouncement() {
       if (!activeGroupId) { alert('Grup seçin'); return; }
       const msg = document.getElementById('announceText').value.trim();
       if (!msg) { alert('Duyuru metni yazın'); return; }
-      // 1. Duyuruyu gönder
       const res = await fetch(API + '/api/send-announcement', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({groupId: activeGroupId, message: msg}) });
       const data = await res.json();
-      if (!data.success) { alert('Duyuru gönderilemedi'); return; }
-      const msgId = data.messageId;
+      if (data.success) {
+        document.getElementById('announceText').value = '';
+        if (data.messageId) window._lastAnnouncementId = data.messageId;
+        alert('✅ Duyuru gönderildi');
+      } else { alert('❌ Duyuru gönderilemedi: ' + (data.error || '')); }
+    }
+
+    async function pinLastMessage() {
+      if (!activeGroupId) { alert('Grup seçin'); return; }
+      const msg = document.getElementById('announceText').value.trim();
+      if (!msg) { alert('Sabitlenecek mesajı yazın'); return; }
+      // Mesajı gönder sonra sabitle
+      const res = await fetch(API + '/api/send-announcement', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({groupId: activeGroupId, message: msg}) });
+      const data = await res.json();
+      if (!data.success) { alert('❌ Mesaj gönderilemedi'); return; }
       document.getElementById('announceText').value = '';
-      // 2. Sabitle (kısa bekleme sonrası mesaj sunucuda hazır olsun)
       await new Promise(r => setTimeout(r, 1500));
-      const pinRes = await fetch(API + '/api/pin-message', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({groupId: activeGroupId, messageId: msgId}) });
+      const pinRes = await fetch(API + '/api/pin-message', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({groupId: activeGroupId, messageId: data.messageId || null}) });
       const pinData = await pinRes.json();
-      if (pinData.success) { alert('✅ Duyuru gönderildi ve sabitlendi'); }
-      else { alert('✅ Duyuru gönderildi\n⚠️ Sabitleme başarısız: ' + (pinData.error || 'Bilinmeyen hata')); }
+      if (pinData.success) { alert('📌 Mesaj gönderildi ve sabitlendi'); }
+      else { alert('✅ Gönderildi\n⚠️ Sabitleme başarısız: ' + (pinData.error || '')); }
     }
 
     async function muteMember(id) { await fetch(API + '/api/mute-member', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({groupId: activeGroupId, memberId: id}) }); alert('Susturuldu'); }
