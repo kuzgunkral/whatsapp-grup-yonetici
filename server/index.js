@@ -883,8 +883,14 @@ app.get('/api/members', async (req, res) => {
 });
 
 app.post('/api/pause-group', (req, res) => {
-  pausedGroups.add(req.body.groupId);
-  res.json({ success: true });
+  const gid = req.body.groupId;
+  if (pausedGroups.has(gid)) {
+    pausedGroups.delete(gid);
+    res.json({ success: true, paused: false });
+  } else {
+    pausedGroups.add(gid);
+    res.json({ success: true, paused: true });
+  }
 });
 
 app.post('/api/ban-member', async (req, res) => {

@@ -105,7 +105,7 @@
       <button class="btn btn-danger" onclick="cleanNoPrice()">🗑️ Tüm Fiyatsız İlanları Sil</button>
       <button class="btn btn-warning" onclick="closeGroup()">🔒 Grubu Kapat</button>
       <button class="btn btn-secondary" onclick="openGroup()">🔓 Grubu Aç</button>
-      <button class="btn btn-secondary" onclick="pauseGroup()">⏸️ Botu Duraklat</button>
+      <button class="btn btn-secondary" id="pauseBtn" onclick="pauseGroup()">⏸️ Botu Duraklat</button>
     </div>
     <div class="card">
       <div class="card-title">👥 Üyeler</div>
@@ -323,7 +323,19 @@
     async function cleanNoPrice() { if (!activeGroupId) { alert('Grup seçin'); return; } const r = await fetch(API + '/api/clean-no-price', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({groupId: activeGroupId}) }); const d = await r.json(); alert(d.message || d.count + ' ilan silindi'); }
     async function closeGroup() { if (!activeGroupId) return; await fetch(API + '/api/close-group', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({groupId: activeGroupId}) }); alert('Grup kapatıldı'); }
     async function openGroup() { if (!activeGroupId) return; await fetch(API + '/api/open-group', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({groupId: activeGroupId}) }); alert('Grup açıldı'); }
-    async function pauseGroup() { if (!activeGroupId) return; await fetch(API + '/api/pause-group', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({groupId: activeGroupId}) }); alert('Bot duraklatıldı'); }
+    async function pauseGroup() {
+      if (!activeGroupId) return;
+      const res = await fetch(API + '/api/pause-group', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({groupId: activeGroupId}) });
+      const data = await res.json();
+      const btn = document.getElementById('pauseBtn');
+      if (data.paused === false) {
+        if (btn) { btn.textContent = '⏸️ Botu Duraklat'; btn.className = 'btn btn-secondary'; }
+        alert('✅ Bot Aktif\nBot tekrar aktif hale getirildi');
+      } else {
+        if (btn) { btn.textContent = '▶️ Botu Aktifleştir'; btn.className = 'btn btn-primary'; }
+        alert('⏸️ Bot Pasif\nBot duraklatıldı');
+      }
+    }
 
     async function sendMessage() {
       if (!activeGroupId) { alert('Grup seçin'); return; }

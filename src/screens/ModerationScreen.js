@@ -15,6 +15,7 @@ const ModerationScreen = () => {
   const [loading, setLoading] = useState(false);
   const [activeGroupName, setActiveGroupName] = useState('');
   const [mutedSet, setMutedSet] = useState(new Set());
+  const [isPaused, setIsPaused] = useState(false);
 
   useEffect(() => {
     const group = botBridge.groups.find((g) => g.id === botBridge.activeGroupId);
@@ -116,7 +117,18 @@ const ModerationScreen = () => {
   };
 
   const handleOpenGroup = () => botBridge.openGroup(botBridge.groups[0]?.id);
-  const handlePause = () => botBridge.pauseGroup(botBridge.groups[0]?.id);
+  const handlePause = async () => {
+    const gid = botBridge.groups[0]?.id;
+    if (!gid) { Alert.alert('Uyarı', 'Grup seçilmedi'); return; }
+    const res = await botBridge.pauseGroup(gid);
+    if (res && res.paused === false) {
+      setIsPaused(false);
+      Alert.alert('✅ Bot Aktif', 'Bot tekrar aktif hale getirildi');
+    } else {
+      setIsPaused(true);
+      Alert.alert('⏸️ Bot Pasif', 'Bot duraklatıldı');
+    }
+  };
 
   const filteredMembers = searchText
     ? members.filter((m) => m.name.includes(searchText) || m.number.includes(searchText))
@@ -136,8 +148,8 @@ const ModerationScreen = () => {
           <TouchableOpacity style={[styles.btn, styles.btnGreen]} onPress={handleOpenGroup}>
             <Text style={styles.btnText}>🔓 Aç</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={[styles.btn, styles.btnYellow]} onPress={handlePause}>
-            <Text style={styles.btnText}>⏸️ Duraklat</Text>
+          <TouchableOpacity style={[styles.btn, isPaused ? styles.btnGreen : styles.btnYellow]} onPress={handlePause}>
+            <Text style={styles.btnText}>{isPaused ? '▶️ Bot Aktif' : '⏸️ Duraklat'}</Text>
           </TouchableOpacity>
         </View>
         <TouchableOpacity style={[styles.btn, styles.btnRed, { marginTop: 10 }]} onPress={handleCleanNoPrice}>
