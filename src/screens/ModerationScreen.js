@@ -84,6 +84,14 @@ const ModerationScreen = () => {
     ]);
   };
 
+  const handleSendRules = async () => {
+    const gid = botBridge.groups[0]?.id;
+    if (!gid) { Alert.alert('Uyarı', 'Grup seçilmedi'); return; }
+    const res = await botBridge.sendRules(gid);
+    if (res && res.success) Alert.alert('✅', 'Kurallar gönderildi');
+    else Alert.alert('Bilgi', res?.error || 'Gönderildi');
+  };
+
   const handleCloseGroup = () => {
     Alert.alert('Grubu Kapat', 'Sadece adminler yazabilecek.', [
       { text: 'İptal', style: 'cancel' },
@@ -118,6 +126,9 @@ const ModerationScreen = () => {
     <ScrollView style={styles.container}>
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>🛡️ Grup İşlemleri</Text>
+        <TouchableOpacity style={[styles.btn, styles.btnGreen, { marginBottom: 10 }]} onPress={handleSendRules}>
+          <Text style={styles.btnText}>📋 Kural Gönder</Text>
+        </TouchableOpacity>
         <View style={styles.btnRow}>
           <TouchableOpacity style={[styles.btn, styles.btnRed]} onPress={handleCloseGroup}>
             <Text style={styles.btnText}>🔒 Kapat</Text>
@@ -157,7 +168,7 @@ const ModerationScreen = () => {
             </View>
             {!m.isAdmin && (
               <View style={styles.actionRow}>
-                <TouchableOpacity onPress={() => handleMute(m)}><Text style={styles.actionIcon}>🔇</Text></TouchableOpacity>
+                <TouchableOpacity onPress={() => handleMute(m)}><Text style={styles.actionIcon}>{mutedSet.has(m.id) ? '🔊' : '🔇'}</Text></TouchableOpacity>
                 <TouchableOpacity onPress={() => handleRemove(m)}><Text style={styles.actionIcon}>🚫</Text></TouchableOpacity>
                 <TouchableOpacity onPress={() => handleBan(m)}><Text style={styles.actionIcon}>⛔</Text></TouchableOpacity>
               </View>
