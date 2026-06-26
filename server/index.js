@@ -31,6 +31,8 @@ let noPriceTimers = {};
 let contactNames = {}; // userId → pushName (mesaj gelince güncellenir)
 let lastSentKeys = {}; // groupId → son gönderilen mesajın key'i (pin için)
 let reklamMuafMsgIds = new Set();
+// Grup mesaj cache'i — clean-no-price için (son 500 mesaj/grup)
+const groupMessages = {}; // groupId → [msg, ...]
 let deletedAdsLog = [];
 let stats = { messagesDeleted: 0, welcomesSent: 0, rulesReminded: 0, spammersRemoved: 0 };
 let config = { automation: { welcome: true, noPrice: true, rules: true }, deleteDelay: 60000, ruleIntervalHours: 6, customRuleMessage: null };
@@ -293,6 +295,14 @@ async function handleMessage(msg) {
     if (activeGroupId && chatId !== activeGroupId) return;
 
     const isFromMe = msg.key.fromMe;
+
+    // Mesajı cache'e ekle (clean-no-price için)
+    if (!isFromMe) {
+      if (!groupMessages[chatId]) groupMessages[chatId] = [];
+      groupMessages[chatId].push(msg);
+      // En fazla 500 mesaj tut, eskiyi sil
+      if (groupMessages[chatId].length > 500) groupMessages[chatId].shift();
+    }
     let msgText = '';
     if (msg.message) {
       msgText = msg.message.conversation || msg.message?.extendedTextMessage?.text || msg.message?.imageMessage?.caption || msg.message?.videoMessage?.caption || msg.message?.documentMessage?.caption || msg.message?.documentWithCaptionMessage?.message?.documentMessage?.caption || '';
@@ -689,19 +699,10 @@ app.post('/api/clean-no-price', async (req, res) => {
     let deletedCount = 0;
     const twentyFourHoursAgo = Math.floor(Date.now() / 1000) - (24 * 3600);
     
-    // Son mesajları çek
-    let messages = [];
-    try {
-      // Baileys fetchMessages farklı çalışabilir, store yoksa chatHistory dene
-      const store = sock.store;
-      if (store && store.messages && store.messages[groupId]) {
-        messages = [...store.messages[groupId].array];
-      }
-    } catch(e) {}
-    
-    // Store yoksa veya boşsa, direkt silme yapamayız - kullanıcıya bildir
-    if (!messages || !messages.length) {
-      return res.json({ success: true, count: 0, message: 'Mesaj geçmişi bulunamadı. Bot açıkken gelen mesajlar otomatik taranır.' });
+    // Grup mesaj cache'inden al
+    const messages = groupMessages[groupId] || [];
+    if (!messages.length) {
+      return res.json({ success: true, count: 0, message: 'Henüz mesaj cache\'i yok. Bot açık olduğu süre içinde gelen mesajlar taranır.' });
     }
     
     const fiyatRegex = /\d+[\.,]?\d*\s*(tl|lira|₺|k\b|bin\b|m\b|milyon\b|milyar\b|son\b)/i;
