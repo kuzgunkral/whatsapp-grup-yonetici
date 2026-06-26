@@ -35,22 +35,27 @@ const MessagesScreen = () => {
     setCustomMsg('');
   };
 
-  const handleSendAnnouncementAndPin = async () => {
+  const handleSendAnnouncement = async () => {
     const gid = getGroupId();
     if (!gid) return;
     if (!announcement.trim()) { Alert.alert('Uyarı', 'Duyuru yazın'); return; }
-    // 1. Duyuruyu gönder
     const res = await botBridge.sendAnnouncement(gid, announcement);
-    if (!res || !res.success) { Alert.alert('❌', 'Duyuru gönderilemedi'); return; }
-    const msgId = res.messageId;
-    setAnnouncement('');
-    // 2. Kısa bekleyip sabitle
-    await new Promise(r => setTimeout(r, 1500));
-    const pinRes = await botBridge.pinMessage(gid, msgId);
-    if (pinRes && pinRes.success) {
-      Alert.alert('✅', 'Duyuru gönderildi ve sabitlendi');
+    if (res && res.success) {
+      Alert.alert('✅', 'Duyuru gönderildi');
+      setAnnouncement('');
     } else {
-      Alert.alert('✅⚠️', 'Duyuru gönderildi\nSabitleme başarısız: ' + (pinRes?.error || 'Bilinmeyen hata'));
+      Alert.alert('❌', 'Duyuru gönderilemedi');
+    }
+  };
+
+  const handlePinMessage = async () => {
+    const gid = getGroupId();
+    if (!gid) return;
+    const res = await botBridge.pinMessage(gid, null); // sunucu lastSentKeys'ten bulur
+    if (res && res.success) {
+      Alert.alert('📌', 'Son duyuru sabitlendi');
+    } else {
+      Alert.alert('❌', res?.error || 'Sabitleme başarısız. Önce duyuru gönderin.');
     }
   };
 
@@ -92,8 +97,11 @@ const MessagesScreen = () => {
           textAlignVertical="top"
         />
         <Text style={styles.charCount}>{announcement.length}/5000</Text>
-        <TouchableOpacity style={[styles.sendBtn, { backgroundColor: '#f7c948' }]} onPress={handleSendAnnouncementAndPin}>
-          <Text style={[styles.sendBtnText, { color: '#111' }]}>📌 Gönder ve Sabitle</Text>
+        <TouchableOpacity style={[styles.sendBtn, { backgroundColor: '#00a884', marginBottom: 8 }]} onPress={handleSendAnnouncement}>
+          <Text style={styles.sendBtnText}>📢 Duyuru Gönder</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={[styles.sendBtn, { backgroundColor: '#f7c948' }]} onPress={handlePinMessage}>
+          <Text style={[styles.sendBtnText, { color: '#111' }]}>📌 Son Duyuruyu Sabitle</Text>
         </TouchableOpacity>
       </View>
     </ScrollView>

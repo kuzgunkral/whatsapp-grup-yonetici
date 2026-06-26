@@ -122,9 +122,10 @@
       <button class="btn btn-primary" onclick="sendMessage()">Gönder</button>
     </div>
     <div class="card">
-      <div class="card-title">📢 Duyuru Gönder + Sabitle</div>
+      <div class="card-title">📢 Duyuru Gönder</div>
       <textarea id="announceText" placeholder="Duyuru metni..."></textarea>
-      <button class="btn btn-secondary" onclick="sendAnnouncementAndPin()">📌 Gönder ve Sabitle</button>
+      <button class="btn btn-secondary" onclick="sendAnnouncement()" style="margin-bottom:8px">📢 Duyuru Gönder</button>
+      <button class="btn" style="background:#f7c948;color:#111" onclick="pinLastMessage()">📌 Son Duyuruyu Sabitle</button>
     </div>
   </div>
 
