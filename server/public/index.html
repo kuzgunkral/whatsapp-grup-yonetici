@@ -125,6 +125,7 @@
       <div class="card-title">📢 Duyuru Gönder</div>
       <textarea id="announceText" placeholder="Duyuru metni..."></textarea>
       <button class="btn btn-secondary" onclick="sendAnnouncement()">📢 Duyuru Gönder</button>
+      <button class="btn" style="background:#f7c948;color:#111;margin-top:8px" onclick="pinLastMessage()">📌 Son Duyuruyu Sabitle</button>
     </div>
   </div>
 
@@ -308,9 +309,19 @@
       if (!activeGroupId) { alert('Grup seçin'); return; }
       const msg = document.getElementById('announceText').value;
       if (!msg) return;
-      await fetch(API + '/api/send-announcement', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({groupId: activeGroupId, message: msg}) });
+      const res = await fetch(API + '/api/send-announcement', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({groupId: activeGroupId, message: msg}) });
+      const data = await res.json();
+      if (data.messageId) window._lastAnnouncementId = data.messageId;
       document.getElementById('announceText').value = '';
       alert('Duyuru gönderildi');
+    }
+
+    async function pinLastMessage() {
+      if (!activeGroupId) { alert('Grup seçin'); return; }
+      const res = await fetch(API + '/api/pin-message', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({groupId: activeGroupId, messageId: window._lastAnnouncementId || null}) });
+      const data = await res.json();
+      if (data.success) { alert('📌 Mesaj sabitlendi'); }
+      else { alert('❌ Sabitleme başarısız: ' + (data.error || 'Önce duyuru gönderin')); }
     }
 
     async function muteMember(id) { await fetch(API + '/api/mute-member', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({groupId: activeGroupId, memberId: id}) }); alert('Susturuldu'); }
