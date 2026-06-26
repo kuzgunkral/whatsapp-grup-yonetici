@@ -112,7 +112,7 @@ const MessagesScreen = () => {
             <Text style={[styles.sendBtnText, { color: '#00a884' }]}>💾 Kaydet</Text>
           </TouchableOpacity>
           <TouchableOpacity style={[styles.sendBtn, { flex: 1 }]} onPress={handleSendRules}>
-            <Text style={styles.sendBtnText}>📋 Gruba Gönder</Text>
+            <Text style={styles.sendBtnText}>📋 Kural Gönder</Text>
           </TouchableOpacity>
         </View>
       </View>
