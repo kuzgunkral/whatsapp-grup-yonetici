@@ -803,13 +803,19 @@ app.post('/api/automation', (req, res) => {
 });
 
 app.post('/api/mute-member', (req, res) => {
-  mutedUsers.add(req.body.memberId);
-  res.json({ success: true });
+  const id = req.body.memberId;
+  if (mutedUsers.has(id)) {
+    mutedUsers.delete(id);
+    res.json({ success: true, muted: false });
+  } else {
+    mutedUsers.add(id);
+    res.json({ success: true, muted: true });
+  }
 });
 
 app.post('/api/unmute-member', (req, res) => {
   mutedUsers.delete(req.body.memberId);
-  res.json({ success: true });
+  res.json({ success: true, muted: false });
 });
 
 app.post('/api/remove-member', async (req, res) => {

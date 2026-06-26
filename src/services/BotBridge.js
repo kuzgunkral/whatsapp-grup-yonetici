@@ -75,7 +75,7 @@ class BotBridge extends EventEmitter {
   closeGroup(groupId) { this._post('/api/close-group', { groupId }); }
   openGroup(groupId) { this._post('/api/open-group', { groupId }); }
   pauseGroup(groupId) { this._post('/api/pause-group', { groupId }); }
-  muteMember(groupId, memberId) { this._post('/api/mute-member', { groupId, memberId }); }
+  async muteMember(groupId, memberId) { return await this._post('/api/mute-member', { groupId, memberId }); }
   unmuteMember(groupId, memberId) { this._post('/api/unmute-member', { groupId, memberId }); }
   removeMember(groupId, memberId) { this._post('/api/remove-member', { groupId, memberId }); }
   banMember(groupId, memberId) { this._post('/api/ban-member', { groupId, memberId }); }

@@ -14,6 +14,7 @@ const ModerationScreen = () => {
   const [searchText, setSearchText] = useState('');
   const [loading, setLoading] = useState(false);
   const [activeGroupName, setActiveGroupName] = useState('');
+  const [mutedSet, setMutedSet] = useState(new Set());
 
   useEffect(() => {
     const group = botBridge.groups.find((g) => g.id === botBridge.activeGroupId);
@@ -48,9 +49,24 @@ const ModerationScreen = () => {
   };
 
   const handleMute = (member) => {
-    Alert.alert('Sustur', `${member.name} 5dk susturulsun mu?`, [
+    const isMuted = mutedSet.has(member.id);
+    const title = isMuted ? '🔊 Susturmayı Kaldır' : '🔇 Sustur';
+    const btnLabel = isMuted ? 'Aç' : 'Sustur';
+    Alert.alert(title, `${member.name || member.number}`, [
       { text: 'İptal', style: 'cancel' },
-      { text: 'Sustur', onPress: () => botBridge.muteMember(botBridge.groups[0]?.id, member.id) },
+      {
+        text: btnLabel,
+        onPress: async () => {
+          const res = await botBridge.muteMember(botBridge.groups[0]?.id, member.id);
+          if (res && res.muted === false) {
+            setMutedSet(prev => { const s = new Set(prev); s.delete(member.id); return s; });
+            Alert.alert('🔊', `${member.name || member.number} susturması kaldırıldı`);
+          } else {
+            setMutedSet(prev => new Set(prev).add(member.id));
+            Alert.alert('🔇', `${member.name || member.number} susturuldu`);
+          }
+        },
+      },
     ]);
   };
 
