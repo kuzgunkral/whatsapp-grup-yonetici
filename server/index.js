@@ -28,6 +28,7 @@ let pausedGroups = new Set();
 let mutedUsers = new Set();
 let noPriceCounter = {};
 let noPriceTimers = {};
+let contactNames = {}; // userId → pushName (mesaj gelince güncellenir)
 let reklamMuafMsgIds = new Set();
 let deletedAdsLog = [];
 let stats = { messagesDeleted: 0, welcomesSent: 0, rulesReminded: 0, spammersRemoved: 0 };
@@ -329,6 +330,12 @@ async function handleMessage(msg) {
     }
     
     if (!userName) userName = userPhone;
+
+    // pushName'i kaydet (üyeler listesinde isim göstermek için)
+    if (msg.pushName && userId) {
+      contactNames[userId] = msg.pushName;
+      if (realUserId && realUserId !== userId) contactNames[realUserId] = msg.pushName;
+    }
 
     // Susturulan üye kontrolü
     if (mutedUsers.has(userId)) {
@@ -825,11 +832,15 @@ app.get('/api/members', async (req, res) => {
       } else {
         number = p.id.split('@')[0];
       }
+      // İsim: contactNames map'inden (mesaj gelince kaydedilir), sonra Baileys alanları
+      const contactId = realId || p.id;
+      const savedName = contactNames[contactId] || contactNames[p.id] || '';
+      const displayName = savedName || p.name || p.notify || p.verifiedName || '';
       return {
         id: p.id,        // Baileys işlemleri için (LID)
         realId: realId,  // DM/remove için gerçek ID
         number: number,  // Görünen numara
-        name: p.notify || number, // pushName varsa göster
+        name: displayName || number, // İsim yoksa numara göster
         isAdmin: p.admin === 'admin' || p.admin === 'superadmin'
       };
     });
