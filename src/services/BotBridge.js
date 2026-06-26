@@ -90,6 +90,7 @@ class BotBridge extends EventEmitter {
   setCustomRule(message) { this._post('/api/set-rule-message', { message }); }
   async cleanNoPrice(groupId) { return await this._post('/api/clean-no-price', { groupId }); }
   restart() { this._post('/api/restart'); }
+  async logout() { return await this._post('/api/logout'); }
 }
 
 const botBridge = new BotBridge();

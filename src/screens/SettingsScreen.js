@@ -105,6 +105,28 @@ const SettingsScreen = () => {
     ]);
   };
 
+  const handleLogout = () => {
+    Alert.alert(
+      '🔓 Oturumu Kapat',
+      'Mevcut WhatsApp bağlantısı kesilir ve kayıtlı oturum silinir.\nYeni telefon numarası ile bağlanabilirsiniz.\n\nDevam edilsin mi?',
+      [
+        { text: 'İptal', style: 'cancel' },
+        {
+          text: 'Oturumu Kapat',
+          style: 'destructive',
+          onPress: async () => {
+            const res = await botBridge.logout();
+            if (res && res.success) {
+              Alert.alert('✅', 'Oturum kapatıldı. Ana sayfadan tekrar bağlanabilirsiniz.');
+            } else {
+              Alert.alert('Hata', 'Oturum kapatılırken hata oluştu.');
+            }
+          },
+        },
+      ]
+    );
+  };
+
   return (
     <ScrollView style={styles.container}>
       {/* Otomasyon */}
@@ -182,6 +204,9 @@ const SettingsScreen = () => {
         </TouchableOpacity>
         <TouchableOpacity style={[styles.dataBtn, { borderColor: '#f7c948', marginTop: 4 }]} onPress={handleRestart}>
           <Text style={[styles.dataBtnText, { color: '#f7c948' }]}>🔄 Bot Restart</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={[styles.dataBtn, { borderColor: '#ea0038', marginTop: 4 }]} onPress={handleLogout}>
+          <Text style={[styles.dataBtnText, { color: '#ea0038' }]}>🔓 Oturumu Kapat (Başka Numara)</Text>
         </TouchableOpacity>
       </View>
 
