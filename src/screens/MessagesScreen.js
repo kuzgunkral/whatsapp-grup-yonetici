@@ -59,8 +59,8 @@ const MessagesScreen = () => {
     if (!gid) return;
     if (!pinMsg.trim()) { Alert.alert('Uyarı', 'Sabitlenecek mesajı yazın'); return; }
     try {
-      // 1. Mesajı gönder
-      const res = await botBridge.sendAnnouncement(gid, pinMsg);
+      // 1. Düz metin olarak gönder (DUYURU formatı değil)
+      const res = await botBridge.sendPlainMessage(gid, pinMsg);
       if (!res || !res.success) { Alert.alert('❌', 'Mesaj gönderilemedi'); return; }
       // 2. Kısa bekle, sabitle
       await new Promise(r => setTimeout(r, 1500));
