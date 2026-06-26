@@ -302,6 +302,7 @@ async function handleMessage(msg) {
     let groupName = chatId;
     let userName = msg.pushName || '';
     let userPhone = '';
+    let realUserId = userId; // Gerçek @s.whatsapp.net ID (LID yerine)
     
     try {
       const meta = await sock.groupMetadata(chatId);
@@ -309,16 +310,19 @@ async function handleMessage(msg) {
       const p = meta.participants.find(x => x.id === userId);
       if (p && (p.admin === 'admin' || p.admin === 'superadmin')) isAdmin = true;
       
-      // LID'den gerçek numarayı bul: participant listesinde @s.whatsapp.net olan eşleşmeyi ara
+      // LID formatı: gerçek telefon numarasını phoneNumber alanından al
       if (userId.includes('@lid')) {
-        // pushName varsa onu kullan, numara çıkaramayız LID'den
-        userPhone = userName || userId.split('@')[0];
-        // Grup metadata'dan numara bulmayı dene
-        if (p && p.id && !p.id.includes('@lid')) {
-          userPhone = p.id.split('@')[0];
+        if (p && p.phoneNumber && p.phoneNumber.includes('@')) {
+          // "905060685034@s.whatsapp.net" → "905060685034"
+          userPhone = p.phoneNumber.split('@')[0];
+          realUserId = p.phoneNumber; // DM göndermek için gerçek ID
+        } else {
+          // Fallback: pushName veya LID numarası
+          userPhone = userName || userId.split('@')[0];
         }
       } else {
         userPhone = userId.split('@')[0];
+        realUserId = userId;
       }
     } catch(e) {
       userPhone = userId.split('@')[0];
@@ -392,7 +396,7 @@ async function handleMessage(msg) {
         spamTracker[userId].adCount++;
         if (!spamTracker[userId].ozelUyari) {
           spamTracker[userId].ozelUyari = true;
-          try { await sock.sendMessage(userId, { text: `⚠️ 1 dakikada 1 ilan atabilirsiniz. Lütfen bekleyiniz.\n\n🛡️ _${groupName} Yönetimi_` }); } catch(e) {}
+          try { await sock.sendMessage(realUserId, { text: `⚠️ 1 dakikada 1 ilan atabilirsiniz. Lütfen bekleyiniz.\n\n🛡️ _${groupName} Yönetimi_` }); } catch(e) {}
         }
         const delKey = getDeleteKey(msg);
         const tryDel = async (a) => { try { await sock.sendMessage(chatId, { delete: delKey }); } catch(e) { if (a < 20) setTimeout(() => tryDel(a+1), 3000); } };
@@ -540,7 +544,7 @@ async function handleMessage(msg) {
     // 1. kez: DM'ye uyar + 1dk sonra sil
     quota.warned = true;
     quota.warnedTime = Date.now();
-    try { await sock.sendMessage(userId, { text: `⚠️ İlanınıza fiyat girmediniz. 1 dakika içerisinde silinecektir.\nLütfen fiyat girerek tekrar gönderiniz.\n\n🛡️ _${groupName} Yönetimi_` }); } catch(e) {}
+    try { await sock.sendMessage(realUserId, { text: `⚠️ İlanınıza fiyat girmediniz. 1 dakika içerisinde silinecektir.\nLütfen fiyat girerek tekrar gönderiniz.\n\n🛡️ _${groupName} Yönetimi_` }); } catch(e) {}
 
     // Resmi hemen indir
     let mediaInfo3 = null;
@@ -797,7 +801,29 @@ app.get('/api/members', async (req, res) => {
   if (!sock || !isReady) return res.status(500).json({ error: 'Not connected' });
   try {
     const meta = await sock.groupMetadata(req.query.groupId);
-    res.json({ members: meta.participants.map(p => ({ id: p.id, number: p.id.split('@')[0], name: p.id.split('@')[0], isAdmin: p.admin === 'admin' || p.admin === 'superadmin' })) });
+    const members = meta.participants.map(p => {
+      // LID formatı: gerçek numarayı phoneNumber alanından al
+      let number = '';
+      let realId = p.id;
+      if (p.id && p.id.includes('@lid')) {
+        if (p.phoneNumber && p.phoneNumber.includes('@')) {
+          number = p.phoneNumber.split('@')[0];
+          realId = p.phoneNumber; // Ban/remove işlemleri için gerçek ID
+        } else {
+          number = p.id.split('@')[0]; // Fallback
+        }
+      } else {
+        number = p.id.split('@')[0];
+      }
+      return {
+        id: p.id,        // Baileys işlemleri için (LID)
+        realId: realId,  // DM/remove için gerçek ID
+        number: number,  // Görünen numara
+        name: p.notify || number, // pushName varsa göster
+        isAdmin: p.admin === 'admin' || p.admin === 'superadmin'
+      };
+    });
+    res.json({ members });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
