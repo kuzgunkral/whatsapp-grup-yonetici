@@ -11,6 +11,8 @@ import botBridge from '../services/BotBridge';
 const MessagesScreen = () => {
   const [customMsg, setCustomMsg] = useState('');
   const [announcement, setAnnouncement] = useState('');
+  const [lastMsgId, setLastMsgId] = useState(null);
+  const [lastGroupId, setLastGroupId] = useState(null);
 
   const getGroupId = () => {
     if (botBridge.groups.length === 0) {
@@ -35,13 +37,26 @@ const MessagesScreen = () => {
     setCustomMsg('');
   };
 
-  const handleSendAnnouncement = () => {
+  const handleSendAnnouncement = async () => {
     const gid = getGroupId();
     if (!gid) return;
     if (!announcement.trim()) { Alert.alert('Uyarı', 'Duyuru yazın'); return; }
-    botBridge.sendAnnouncement(gid, announcement);
-    Alert.alert('✅', 'Duyuru gönderildi + sabitlendi');
+    const res = await botBridge.sendAnnouncement(gid, announcement);
+    setLastGroupId(gid);
+    if (res && res.messageId) setLastMsgId(res.messageId);
+    Alert.alert('✅', 'Duyuru gönderildi');
     setAnnouncement('');
+  };
+
+  const handlePinMessage = async () => {
+    const gid = lastGroupId || getGroupId();
+    if (!gid) return;
+    const res = await botBridge.pinMessage(gid, lastMsgId);
+    if (res && res.success) {
+      Alert.alert('📌', 'Mesaj sabitlendi');
+    } else {
+      Alert.alert('❌', res?.error || 'Sabitleme başarısız. Önce duyuru gönderin.');
+    }
   };
 
   return (
@@ -70,7 +85,7 @@ const MessagesScreen = () => {
       </View>
 
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>📌 Duyuru (5000 karakter)</Text>
+        <Text style={styles.sectionTitle}>📢 Duyuru (5000 karakter)</Text>
         <TextInput
           style={[styles.input, { minHeight: 150 }]}
           placeholder="Duyuru metni..."
@@ -82,8 +97,11 @@ const MessagesScreen = () => {
           textAlignVertical="top"
         />
         <Text style={styles.charCount}>{announcement.length}/5000</Text>
-        <TouchableOpacity style={[styles.sendBtn, { backgroundColor: '#f7c948' }]} onPress={handleSendAnnouncement}>
-          <Text style={[styles.sendBtnText, { color: '#111' }]}>📌 Duyuru Gönder + Sabitle</Text>
+        <TouchableOpacity style={[styles.sendBtn, { backgroundColor: '#00a884', marginBottom: 8 }]} onPress={handleSendAnnouncement}>
+          <Text style={styles.sendBtnText}>📢 Duyuru Gönder</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={[styles.sendBtn, { backgroundColor: '#f7c948' }]} onPress={handlePinMessage}>
+          <Text style={[styles.sendBtnText, { color: '#111' }]}>📌 Son Duyuruyu Sabitle</Text>
         </TouchableOpacity>
       </View>
     </ScrollView>

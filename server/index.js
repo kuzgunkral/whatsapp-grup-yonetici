@@ -29,6 +29,7 @@ let mutedUsers = new Set();
 let noPriceCounter = {};
 let noPriceTimers = {};
 let contactNames = {}; // userId → pushName (mesaj gelince güncellenir)
+let lastSentKeys = {}; // groupId → son gönderilen mesajın key'i (pin için)
 let reklamMuafMsgIds = new Set();
 let deletedAdsLog = [];
 let stats = { messagesDeleted: 0, welcomesSent: 0, rulesReminded: 0, spammersRemoved: 0 };
@@ -646,31 +647,43 @@ app.post('/api/send-message', async (req, res) => {
 });
 
 app.post('/api/send-announcement', async (req, res) => {
-  const { groupId, message, pin } = req.body;
+  const { groupId, message } = req.body;
   if (!sock || !isReady) return res.status(500).json({ error: 'Not connected' });
   try {
     const meta = await sock.groupMetadata(groupId);
     const formatted = `📢 *DUYURU*\n━━━━━━━━━━━━━━━━\n\n${message}\n\n🛡️ _${meta.subject} Yönetimi_`;
     const sent = await sock.sendMessage(groupId, { text: formatted });
-    
-    // Sabitle seçeneği işaretlendiyse mesajı sabitle (24 saat)
-    if (pin && sent && sent.key) {
-      try {
-        await sock.sendMessage(groupId, {
-          pin: {
-            type: 1,   // 1 = pin, 0 = unpin
-            time: 86400 // 24 saat (saniye)
-          },
-          messageContextInfo: {}
-        }, { messageId: sent.key.id });
-      } catch(pinErr) {
-        // Sabitleme başarısız olsa da duyuru gönderildi
-        debugLog('Pin error: ' + pinErr.message);
-      }
+    // Son gönderilen mesajın key'ini sakla (pin endpoint'i kullanabilsin)
+    if (sent && sent.key) {
+      lastSentKeys = lastSentKeys || {};
+      lastSentKeys[groupId] = sent.key;
     }
-    
-    res.json({ success: true, pinned: !!(pin && sent?.key) });
+    res.json({ success: true, messageId: sent?.key?.id });
   } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/pin-message', async (req, res) => {
+  const { groupId, messageId } = req.body;
+  if (!sock || !isReady) return res.status(500).json({ error: 'Not connected' });
+  try {
+    // messageId verilmediyse son gönderilen mesajı kullan
+    let keyToPin = null;
+    if (messageId) {
+      keyToPin = { remoteJid: groupId, id: messageId, fromMe: true };
+    } else if (lastSentKeys && lastSentKeys[groupId]) {
+      keyToPin = lastSentKeys[groupId];
+    }
+    if (!keyToPin) return res.status(400).json({ error: 'Sabitlenecek mesaj bulunamadı' });
+    
+    await sock.sendMessage(groupId, {
+      pin: { type: 1, time: 604800 }, // 7 gün
+      key: keyToPin
+    });
+    res.json({ success: true });
+  } catch(e) {
+    debugLog('Pin error: ' + e.message);
+    res.status(500).json({ error: e.message });
+  }
 });
 
 app.post('/api/set-active-group', (req, res) => {
