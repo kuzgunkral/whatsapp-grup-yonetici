@@ -180,6 +180,8 @@ async function connect(phoneNumber) {
       debugLog('group-participants.update: action=' + update.action + ' group=' + update.id + ' participants=' + JSON.stringify(update.participants));
       if (!config.automation.welcome) { debugLog('Welcome disabled, skipping'); return; }
       if (update.action !== 'add') return;
+      // Sadece seçili grupta hoşgeldin at
+      if (activeGroupId && update.id !== activeGroupId) { debugLog('Welcome skipped: not active group'); return; }
       handleGroupJoin(update);
     });
 
@@ -199,6 +201,8 @@ async function loadGroups() {
 
 async function handleGroupJoin(update) {
   try {
+    // Sadece seçili grupta çalış
+    if (activeGroupId && update.id !== activeGroupId) return;
     debugLog('handleGroupJoin: sending welcome to ' + update.id);
     const meta = await sock.groupMetadata(update.id);
     for (const p of update.participants) {
@@ -642,13 +646,30 @@ app.post('/api/send-message', async (req, res) => {
 });
 
 app.post('/api/send-announcement', async (req, res) => {
-  const { groupId, message } = req.body;
+  const { groupId, message, pin } = req.body;
   if (!sock || !isReady) return res.status(500).json({ error: 'Not connected' });
   try {
     const meta = await sock.groupMetadata(groupId);
     const formatted = `📢 *DUYURU*\n━━━━━━━━━━━━━━━━\n\n${message}\n\n🛡️ _${meta.subject} Yönetimi_`;
-    await sock.sendMessage(groupId, { text: formatted });
-    res.json({ success: true });
+    const sent = await sock.sendMessage(groupId, { text: formatted });
+    
+    // Sabitle seçeneği işaretlendiyse mesajı sabitle (24 saat)
+    if (pin && sent && sent.key) {
+      try {
+        await sock.sendMessage(groupId, {
+          pin: {
+            type: 1,   // 1 = pin, 0 = unpin
+            time: 86400 // 24 saat (saniye)
+          },
+          messageContextInfo: {}
+        }, { messageId: sent.key.id });
+      } catch(pinErr) {
+        // Sabitleme başarısız olsa da duyuru gönderildi
+        debugLog('Pin error: ' + pinErr.message);
+      }
+    }
+    
+    res.json({ success: true, pinned: !!(pin && sent?.key) });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
