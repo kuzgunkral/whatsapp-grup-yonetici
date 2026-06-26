@@ -675,23 +675,29 @@ app.post('/api/pin-message', async (req, res) => {
     }
     if (!keyToPin) return res.status(400).json({ error: 'Sabitlenecek mesaj bulunamadı' });
 
-    // Baileys 7.x'te sabitleme: groupPinMessage(jid, messageKey, type, time)
-    // type: 1=pin, 0=unpin
+    debugLog('Pin attempt: ' + JSON.stringify(keyToPin));
+
+    // Baileys 7.x: sock.groupPinMessage(key, type)
     if (typeof sock.groupPinMessage === 'function') {
+      debugLog('Using groupPinMessage');
       await sock.groupPinMessage(keyToPin, 1);
       return res.json({ success: true });
     }
-    // Fallback: relayMessage ile pinInChatMessage
-    await sock.relayMessage(groupId, {
+
+    // Fallback: sendMessage ile pinInChatMessage proto
+    debugLog('Using sendMessage pinInChatMessage fallback');
+    const { proto } = await import('baileys');
+    const pinNode = proto.Message.fromObject({
       pinInChatMessage: {
         key: keyToPin,
         type: 1,
-        senderTimestampMs: Long ? Long.fromNumber(Date.now()) : Date.now()
+        senderTimestampMs: Date.now()
       }
-    }, { messageId: sock.generateMessageTag() });
+    });
+    await sock.relayMessage(groupId, pinNode, {});
     res.json({ success: true });
   } catch(e) {
-    debugLog('Pin error: ' + e.message);
+    debugLog('Pin error: ' + e.message + ' stack: ' + e.stack);
     res.status(500).json({ error: 'Sabitleme başarısız: ' + e.message });
   }
 });
