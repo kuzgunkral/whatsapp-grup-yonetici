@@ -295,7 +295,7 @@ async function handleMessage(msg) {
     if (!userName) userName = userPhone;
 
     // Susturulan üye kontrolü
-    if (mutedUsers.has(userId) && !isAdmin) {
+    if (mutedUsers.has(userId)) {
       try { await sock.sendMessage(chatId, { delete: getDeleteKey(msg) }); } catch(e) {}
       return;
     }
@@ -313,8 +313,8 @@ async function handleMessage(msg) {
       }
     }
 
-    // Adminler muaf
-    if (isAdmin) return;
+    // Admin muafiyeti DEVRE DISI - test modu
+    // if (isAdmin) return;
 
     if (!config.automation.noPrice) return;
 
