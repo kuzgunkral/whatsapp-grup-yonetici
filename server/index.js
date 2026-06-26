@@ -674,15 +674,34 @@ app.post('/api/pin-message', async (req, res) => {
       keyToPin = lastSentKeys[groupId];
     }
     if (!keyToPin) return res.status(400).json({ error: 'Sabitlenecek mesaj bulunamadı' });
-    
+
+    // Baileys'de sabitleme: sendMessage ile pin tipi
+    // type: 1=7gün, 2=24saat, 3=1 hafta; time saniye
     await sock.sendMessage(groupId, {
-      pin: { type: 1, time: 604800 }, // 7 gün
-      key: keyToPin
+      pin: {
+        type: 1,
+        time: 604800, // 7 gün
+        messageKey: keyToPin
+      }
     });
     res.json({ success: true });
   } catch(e) {
     debugLog('Pin error: ' + e.message);
-    res.status(500).json({ error: e.message });
+    // Alternatif yöntem dene
+    try {
+      const { proto } = await import('baileys');
+      await sock.relayMessage(groupId, {
+        pinInChatMessage: {
+          key: keyToPin,
+          type: 1,
+          senderTimestampMs: Date.now()
+        }
+      }, {});
+      res.json({ success: true });
+    } catch(e2) {
+      debugLog('Pin fallback error: ' + e2.message);
+      res.status(500).json({ error: 'Sabitleme başarısız: ' + e2.message });
+    }
   }
 });
 

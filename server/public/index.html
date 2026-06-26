@@ -122,10 +122,9 @@
       <button class="btn btn-primary" onclick="sendMessage()">Gönder</button>
     </div>
     <div class="card">
-      <div class="card-title">📢 Duyuru Gönder</div>
+      <div class="card-title">📢 Duyuru Gönder + Sabitle</div>
       <textarea id="announceText" placeholder="Duyuru metni..."></textarea>
-      <button class="btn btn-secondary" onclick="sendAnnouncement()">📢 Duyuru Gönder</button>
-      <button class="btn" style="background:#f7c948;color:#111;margin-top:8px" onclick="pinLastMessage()">📌 Son Duyuruyu Sabitle</button>
+      <button class="btn btn-secondary" onclick="sendAnnouncementAndPin()">📌 Gönder ve Sabitle</button>
     </div>
   </div>
 
@@ -305,23 +304,22 @@
       alert('Gönderildi');
     }
 
-    async function sendAnnouncement() {
+    async function sendAnnouncementAndPin() {
       if (!activeGroupId) { alert('Grup seçin'); return; }
-      const msg = document.getElementById('announceText').value;
-      if (!msg) return;
+      const msg = document.getElementById('announceText').value.trim();
+      if (!msg) { alert('Duyuru metni yazın'); return; }
+      // 1. Duyuruyu gönder
       const res = await fetch(API + '/api/send-announcement', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({groupId: activeGroupId, message: msg}) });
       const data = await res.json();
-      if (data.messageId) window._lastAnnouncementId = data.messageId;
+      if (!data.success) { alert('Duyuru gönderilemedi'); return; }
+      const msgId = data.messageId;
       document.getElementById('announceText').value = '';
-      alert('Duyuru gönderildi');
-    }
-
-    async function pinLastMessage() {
-      if (!activeGroupId) { alert('Grup seçin'); return; }
-      const res = await fetch(API + '/api/pin-message', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({groupId: activeGroupId, messageId: window._lastAnnouncementId || null}) });
-      const data = await res.json();
-      if (data.success) { alert('📌 Mesaj sabitlendi'); }
-      else { alert('❌ Sabitleme başarısız: ' + (data.error || 'Önce duyuru gönderin')); }
+      // 2. Sabitle (kısa bekleme sonrası mesaj sunucuda hazır olsun)
+      await new Promise(r => setTimeout(r, 1500));
+      const pinRes = await fetch(API + '/api/pin-message', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({groupId: activeGroupId, messageId: msgId}) });
+      const pinData = await pinRes.json();
+      if (pinData.success) { alert('✅ Duyuru gönderildi ve sabitlendi'); }
+      else { alert('✅ Duyuru gönderildi\n⚠️ Sabitleme başarısız: ' + (pinData.error || 'Bilinmeyen hata')); }
     }
 
     async function muteMember(id) { await fetch(API + '/api/mute-member', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({groupId: activeGroupId, memberId: id}) }); alert('Susturuldu'); }
