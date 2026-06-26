@@ -57,20 +57,15 @@ const MessagesScreen = () => {
   const handleSendAndPin = async () => {
     const gid = getGroupId();
     if (!gid) return;
-    if (!pinMsg.trim()) { Alert.alert('Uyarı', 'Sabitlenecek mesajı yazın'); return; }
+    if (!pinMsg.trim()) { Alert.alert('Uyarı', 'Grup açıklaması yazın'); return; }
     try {
-      // 1. Düz metin olarak gönder (DUYURU formatı değil)
-      const res = await botBridge.sendPlainMessage(gid, pinMsg);
-      if (!res || !res.success) { Alert.alert('❌', 'Mesaj gönderilemedi'); return; }
-      // 2. Kısa bekle, sabitle
-      await new Promise(r => setTimeout(r, 1500));
-      const pinRes = await botBridge.pinMessage(gid, res.messageId || null);
-      if (pinRes && pinRes.success) {
-        Alert.alert('📌', 'Mesaj gönderildi ve sabitlendi');
+      // Grup açıklamasını güncelle (WhatsApp grup altı açıklama alanı)
+      const res = await botBridge.setGroupDescription(gid, pinMsg);
+      if (res && res.success) {
+        Alert.alert('📌', 'Grup açıklaması güncellendi');
         setPinMsg('');
       } else {
-        Alert.alert('⚠️', 'Gönderildi ama sabitleme başarısız:\n' + (pinRes?.error || 'Bilinmeyen hata'));
-        setPinMsg('');
+        Alert.alert('❌', 'Güncelleme başarısız: ' + (res?.error || 'Bilinmeyen hata'));
       }
     } catch (e) {
       Alert.alert('❌', 'Hata: ' + e.message);

@@ -71,7 +71,7 @@ class BotBridge extends EventEmitter {
   async sendPlainMessage(groupId, message) { return await this._post('/api/send-message', { groupId, message }); }
   sendRules(groupId) { this._post('/api/send-rules', { groupId }); }
   async sendAnnouncement(groupId, message) { return await this._post('/api/send-announcement', { groupId, message }); }
-  async pinMessage(groupId, messageId) { return await this._post('/api/pin-message', { groupId, messageId }); }
+  async setGroupDescription(groupId, description) { return await this._post('/api/set-group-description', { groupId, description }); }
   closeGroup(groupId) { this._post('/api/close-group', { groupId }); }
   openGroup(groupId) { this._post('/api/open-group', { groupId }); }
   pauseGroup(groupId) { this._post('/api/pause-group', { groupId }); }

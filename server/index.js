@@ -667,78 +667,14 @@ app.post('/api/send-announcement', async (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
-app.post('/api/pin-message', async (req, res) => {
-  const { groupId, messageId } = req.body;
+app.post('/api/set-group-description', async (req, res) => {
+  const { groupId, description } = req.body;
   if (!sock || !isReady) return res.status(500).json({ error: 'Not connected' });
   try {
-    // messageId verilmediyse son gönderilen mesajı kullan
-    let keyToPin = null;
-    let pinId = messageId;
-    if (messageId) {
-      keyToPin = { remoteJid: groupId, id: messageId, fromMe: true };
-    } else if (lastSentKeys && lastSentKeys[groupId]) {
-      keyToPin = lastSentKeys[groupId];
-      pinId = keyToPin.id;
-    }
-    if (!keyToPin || !pinId) return res.status(400).json({ error: 'Sabitlenecek mesaj bulunamadı' });
-
-    debugLog('Pin attempt: ' + JSON.stringify(keyToPin));
-
-    // Yöntem 1: Baileys query IQ node (en güvenilir yöntem)
-    try {
-      await sock.query({
-        tag: 'iq',
-        attrs: {
-          to: groupId,
-          type: 'set',
-          xmlns: 'w:pin:update'
-        },
-        content: [{
-          tag: 'pin',
-          attrs: { action: 'pin', id: pinId, time: '86400' }
-        }]
-      });
-      debugLog('Pin success via query IQ');
-      return res.json({ success: true });
-    } catch(e1) {
-      debugLog('query IQ failed: ' + e1.message);
-    }
-
-    // Yöntem 2: groupPinMessage (varsa)
-    if (typeof sock.groupPinMessage === 'function') {
-      try {
-        await sock.groupPinMessage(keyToPin, 1);
-        debugLog('Pin success via groupPinMessage');
-        return res.json({ success: true });
-      } catch(e2) {
-        debugLog('groupPinMessage failed: ' + e2.message);
-      }
-    }
-
-    // Yöntem 3: sendMessage pinInChatMessage proto
-    try {
-      const baileys = await import('baileys');
-      const proto = baileys.proto;
-      if (proto && proto.Message) {
-        const pinNode = proto.Message.fromObject({
-          pinInChatMessage: {
-            key: keyToPin,
-            type: 1,
-            senderTimestampMs: Long ? Long.fromNumber(Date.now()) : Date.now()
-          }
-        });
-        await sock.relayMessage(groupId, pinNode, {});
-        debugLog('Pin success via relayMessage proto');
-        return res.json({ success: true });
-      }
-    } catch(e3) {
-      debugLog('relayMessage proto failed: ' + e3.message);
-    }
-
-    res.status(500).json({ error: 'Tüm sabitleme yöntemleri başarısız oldu' });
+    await sock.groupUpdateDescription(groupId, description);
+    res.json({ success: true });
   } catch(e) {
-    debugLog('Pin error: ' + e.message + ' stack: ' + e.stack);
-    res.status(500).json({ error: 'Sabitleme başarısız: ' + e.message });
+    res.status(500).json({ error: 'Açıklama güncellenemedi: ' + e.message });
   }
 });
 
