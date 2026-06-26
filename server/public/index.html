@@ -117,15 +117,23 @@
   <!-- MESAJ -->
   <div class="page" id="page-msg">
     <div class="card">
-      <div class="card-title">💬 Mesaj Gönder</div>
+      <div class="card-title">📋 Kural Mesajı</div>
+      <textarea id="ruleText" placeholder="Kural metnini buraya yazın..." maxlength="5000" style="min-height:120px"></textarea>
+      <div style="font-size:11px;color:#8696a0;text-align:right;margin:-8px 0 8px" id="ruleCharCount">0/5000</div>
+      <div style="display:flex;gap:8px">
+        <button class="btn" style="flex:1;background:#2a3942;border:1px solid #00a884;color:#00a884" onclick="saveRuleMessage()">💾 Kaydet</button>
+        <button class="btn btn-primary" style="flex:1" onclick="sendRules()">📋 Gruba Gönder</button>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">💬 Özel Mesaj</div>
       <textarea id="msgText" placeholder="Gruba gönderilecek mesaj..."></textarea>
       <button class="btn btn-primary" onclick="sendMessage()">Gönder</button>
     </div>
     <div class="card">
       <div class="card-title">📢 Duyuru Gönder</div>
       <textarea id="announceText" placeholder="Duyuru metni..."></textarea>
-      <button class="btn btn-secondary" onclick="sendAnnouncement()" style="margin-bottom:8px">📢 Duyuru Gönder</button>
-      <button class="btn" style="background:#f7c948;color:#111" onclick="pinLastMessage()">📌 Sabitle</button>
+      <button class="btn btn-secondary" onclick="sendAnnouncement()">📢 Duyuru Gönder</button>
     </div>
   </div>
 
@@ -290,6 +298,27 @@
       renderMembers(filtered);
     }
 
+    // Kural metnini sunucudan yükle
+    async function loadRuleMessage() {
+      try {
+        const res = await fetch(API + '/api/get-rule-message');
+        const data = await res.json();
+        if (data.message) {
+          document.getElementById('ruleText').value = data.message;
+          document.getElementById('ruleCharCount').textContent = data.message.length + '/5000';
+        }
+      } catch(e) {}
+    }
+
+    // Kural metnini kaydet
+    async function saveRuleMessage() {
+      const msg = document.getElementById('ruleText').value.trim();
+      const res = await fetch(API + '/api/set-rule-message', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({message: msg}) });
+      const data = await res.json();
+      if (data.success) alert('✅ Kural mesajı kaydedildi');
+      else alert('❌ Kaydedilemedi');
+    }
+
     async function sendRules() { if (!activeGroupId) { alert('Grup seçin'); return; } await fetch(API + '/api/send-rules', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({groupId: activeGroupId}) }); alert('Kurallar gönderildi'); }
     async function cleanNoPrice() { if (!activeGroupId) { alert('Grup seçin'); return; } const r = await fetch(API + '/api/clean-no-price', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({groupId: activeGroupId}) }); const d = await r.json(); alert(d.message || d.count + ' ilan silindi'); }
     async function closeGroup() { if (!activeGroupId) return; await fetch(API + '/api/close-group', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({groupId: activeGroupId}) }); alert('Grup kapatıldı'); }
@@ -334,7 +363,13 @@
       else { alert('✅ Gönderildi\n⚠️ Sabitleme başarısız: ' + (pinData.error || '')); }
     }
 
-    async function muteMember(id) { await fetch(API + '/api/mute-member', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({groupId: activeGroupId, memberId: id}) }); alert('Susturuldu'); }
+    async function muteMember(id) {
+      const res = await fetch(API + '/api/mute-member', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({groupId: activeGroupId, memberId: id}) });
+      const data = await res.json();
+      if (data.muted === false) alert('🔊 Susturma kaldırıldı');
+      else alert('🔇 Susturuldu');
+      loadMembers();
+    }
     async function removeMember(id) { if (!confirm('Bu üye çıkarılacak?')) return; await fetch(API + '/api/remove-member', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({groupId: activeGroupId, memberId: id}) }); loadMembers(); }
 
     function addLog(data) {
@@ -471,6 +506,7 @@
 
     function switchTab(name) {
       document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+      if (name === 'msg') loadRuleMessage();
       document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
       document.getElementById('page-' + name).classList.add('active');
       event.currentTarget.classList.add('active');
