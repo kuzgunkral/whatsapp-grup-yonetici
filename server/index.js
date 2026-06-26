@@ -201,9 +201,32 @@ async function handleGroupJoin(update) {
     debugLog('handleGroupJoin: sending welcome to ' + update.id);
     const meta = await sock.groupMetadata(update.id);
     for (const p of update.participants) {
-      const name = p.split('@')[0];
-      const welcomeMsg = `👋 Hoş geldin *${name}*!\n\nGrubumuza katıldığın için teşekkürler 🎉\n\n📌 *Hatırlatma:*\n• İlan verirken fiyat belirtin\n• Saygılı olalım\n\n_İyi alışverişler!_ 🛒\n🛡️ _${meta.subject} Yönetimi_`;
-      await sock.sendMessage(update.id, { text: welcomeMsg });
+      // Katılan üyenin adını grup metadata'sından bul (pushName yoksa numara)
+      let name = p.split('@')[0];
+      try {
+        const participant = meta.participants.find(x => x.id === p);
+        if (participant && participant.notify) name = participant.notify;
+      } catch(e) {}
+      
+      const welcomeMsg =
+        `╔══════════════════════╗\n` +
+        `║   👋 HOŞ GELDİN!   ║\n` +
+        `╚══════════════════════╝\n\n` +
+        `Merhaba @${p.split('@')[0]} 🎉\n\n` +
+        `*${meta.subject}* grubuna hoş geldin!\n\n` +
+        `📌 *Grup Kuralları:*\n` +
+        `• İlanlarında mutlaka fiyat belirt\n` +
+        `• Aynı ilanı tekrar tekrar atma\n` +
+        `• Saygılı ol\n` +
+        `• Konu dışı paylaşım yapma\n\n` +
+        `⚠️ Kurallara uymayan ilanlar silinir.\n\n` +
+        `_İyi alışverişler!_ 🛒\n` +
+        `🛡️ _${meta.subject} Yönetimi_`;
+
+      await sock.sendMessage(update.id, {
+        text: welcomeMsg,
+        mentions: [p]
+      });
       stats.welcomesSent++;
       io.emit('log', { type: 'welcome', user: name, group: meta.subject });
       debugLog('Welcome sent to: ' + name + ' in ' + meta.subject);
