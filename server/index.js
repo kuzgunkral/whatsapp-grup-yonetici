@@ -642,7 +642,12 @@ app.post('/api/send-rules', async (req, res) => {
   if (!sock || !isReady) return res.status(500).json({ error: 'Not connected' });
   try {
     const meta = await sock.groupMetadata(groupId);
-    await sock.sendMessage(groupId, { text: `📢 *${meta.subject}*\n━━━━━━━━━━━━━━━━\n\n📋 *Grup Kuralları*\n\n• İlanlarınızda mutlaka fiyat belirtin\n• Aynı ilanı tekrar tekrar atmayın\n• Saygılı olalım\n\n⚠️ Kurallara uymayan ilanlar silinecektir.\n\n🛡️ _${meta.subject} Yönetimi_` });
+    // Özel kural metni varsa onu kullan, yoksa varsayılan
+    const ruleText = config.customRuleMessage
+      ? config.customRuleMessage
+      : `📋 *Grup Kuralları*\n\n• İlanlarınızda mutlaka fiyat belirtin\n• Aynı ilanı tekrar tekrar atmayın\n• Saygılı olalım\n\n⚠️ Kurallara uymayan ilanlar silinecektir.`;
+    const formatted = `📢 *${meta.subject}*\n━━━━━━━━━━━━━━━━\n\n${ruleText}\n\n🛡️ _${meta.subject} Yönetimi_`;
+    await sock.sendMessage(groupId, { text: formatted });
     res.json({ success: true });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
