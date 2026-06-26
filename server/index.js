@@ -641,12 +641,8 @@ app.post('/api/send-message', async (req, res) => {
   const { groupId, message } = req.body;
   if (!sock || !isReady) return res.status(500).json({ error: 'Not connected' });
   try {
-    const sent = await sock.sendMessage(groupId, { text: message });
-    // Key'i sakla (pin endpoint'i kullanabilsin)
-    if (sent && sent.key) {
-      lastSentKeys = lastSentKeys || {};
-      lastSentKeys[groupId] = sent.key;
-    }
+    const formatted = `━━━━━━━━━━━━━━━━\n\n${message}\n\n━━━━━━━━━━━━━━━━`;
+    const sent = await sock.sendMessage(groupId, { text: formatted });
     res.json({ success: true, messageId: sent?.key?.id });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });

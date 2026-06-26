@@ -1,5 +1,5 @@
 /**
- * Mesajlar Ekranı - Duyuru / Kural / Özel Mesaj / Sabitle
+ * Mesajlar Ekranı - Duyuru / Kural / Özel Mesaj
  */
 
 import React, { useState } from 'react';
@@ -11,7 +11,6 @@ import botBridge from '../services/BotBridge';
 const MessagesScreen = () => {
   const [customMsg, setCustomMsg] = useState('');
   const [announcement, setAnnouncement] = useState('');
-  const [pinMsg, setPinMsg] = useState('');
 
   const getGroupId = () => {
     const active = botBridge.activeGroupId;
@@ -54,33 +53,18 @@ const MessagesScreen = () => {
     }
   };
 
-  const handleSendAndPin = async () => {
-    const gid = getGroupId();
-    if (!gid) return;
-    if (!pinMsg.trim()) { Alert.alert('Uyarı', 'Grup açıklaması yazın'); return; }
-    try {
-      // Grup açıklamasını güncelle (WhatsApp grup altı açıklama alanı)
-      const res = await botBridge.setGroupDescription(gid, pinMsg);
-      if (res && res.success) {
-        Alert.alert('📌', 'Grup açıklaması güncellendi');
-        setPinMsg('');
-      } else {
-        Alert.alert('❌', 'Güncelleme başarısız: ' + (res?.error || 'Bilinmeyen hata'));
-      }
-    } catch (e) {
-      Alert.alert('❌', 'Hata: ' + e.message);
-    }
-  };
-
   return (
     <ScrollView style={styles.container}>
+      {/* Kural Hatırlatması */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>📨 Hızlı Mesajlar</Text>
+        <Text style={styles.hint}>Kural metnini Ayarlar → Özel Kural Mesajı'ndan düzenleyebilirsiniz.</Text>
         <TouchableOpacity style={styles.quickBtn} onPress={handleSendRules}>
           <Text style={styles.quickBtnText}>📋 Kural Hatırlatması Gönder</Text>
         </TouchableOpacity>
       </View>
 
+      {/* Özel Mesaj */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>✉️ Özel Mesaj</Text>
         <TextInput
@@ -97,6 +81,7 @@ const MessagesScreen = () => {
         </TouchableOpacity>
       </View>
 
+      {/* Duyuru */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>📢 Duyuru Gönder</Text>
         <TextInput
@@ -114,24 +99,6 @@ const MessagesScreen = () => {
           <Text style={styles.sendBtnText}>📢 Duyuru Gönder</Text>
         </TouchableOpacity>
       </View>
-
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>📌 Sabitle</Text>
-        <TextInput
-          style={[styles.input, { minHeight: 120 }]}
-          placeholder="Sabitlenecek mesajı yazın..."
-          placeholderTextColor="#8696a0"
-          value={pinMsg}
-          onChangeText={setPinMsg}
-          multiline
-          maxLength={5000}
-          textAlignVertical="top"
-        />
-        <Text style={styles.charCount}>{pinMsg.length}/5000</Text>
-        <TouchableOpacity style={[styles.sendBtn, { backgroundColor: '#f7c948' }]} onPress={handleSendAndPin}>
-          <Text style={[styles.sendBtnText, { color: '#111' }]}>📌 Sabitle</Text>
-        </TouchableOpacity>
-      </View>
     </ScrollView>
   );
 };
@@ -139,7 +106,8 @@ const MessagesScreen = () => {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#111b21', padding: 16 },
   section: { backgroundColor: '#1f2c33', borderRadius: 12, padding: 16, marginBottom: 12 },
-  sectionTitle: { color: '#00a884', fontSize: 13, fontWeight: '600', marginBottom: 12, textTransform: 'uppercase' },
+  sectionTitle: { color: '#00a884', fontSize: 13, fontWeight: '600', marginBottom: 8, textTransform: 'uppercase' },
+  hint: { color: '#8696a0', fontSize: 11, marginBottom: 10 },
   quickBtn: { backgroundColor: '#1c3a2a', borderWidth: 1, borderColor: '#00a884', borderRadius: 8, padding: 14, alignItems: 'center' },
   quickBtnText: { color: '#e9edef', fontSize: 14 },
   input: { backgroundColor: '#2a3942', borderRadius: 8, padding: 14, color: '#e9edef', borderWidth: 1, borderColor: '#3b4a54', minHeight: 80, textAlignVertical: 'top', marginBottom: 12 },
