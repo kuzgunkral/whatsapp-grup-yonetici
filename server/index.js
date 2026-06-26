@@ -646,7 +646,7 @@ app.post('/api/send-rules', async (req, res) => {
     const ruleText = config.customRuleMessage
       ? config.customRuleMessage
       : `📋 *Grup Kuralları*\n\n• İlanlarınızda mutlaka fiyat belirtin\n• Aynı ilanı tekrar tekrar atmayın\n• Saygılı olalım\n\n⚠️ Kurallara uymayan ilanlar silinecektir.`;
-    const formatted = `📢 *${meta.subject}*\n━━━━━━━━━━━━━━━━\n\n${ruleText}\n\n🛡️ _${meta.subject} Yönetimi_`;
+    const formatted = `📋 *${meta.subject} | Kurallar!*\n━━━━━━━━━━━━━━━━\n\n${ruleText}\n\n🛡️ _${meta.subject} Yönetimi_`;
     await sock.sendMessage(groupId, { text: formatted });
     res.json({ success: true });
   } catch(e) { res.status(500).json({ error: e.message }); }
