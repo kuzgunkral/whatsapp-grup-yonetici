@@ -1033,6 +1033,10 @@ app.post('/api/set-rule-interval', (req, res) => {
   res.json({ success: true });
 });
 
+app.get('/api/get-rule-message', (req, res) => {
+  res.json({ message: config.customRuleMessage || '' });
+});
+
 app.post('/api/set-rule-message', (req, res) => {
   config.customRuleMessage = req.body.message || null;
   saveConfig();

@@ -15,13 +15,26 @@ const MessagesScreen = () => {
   const [ruleText, setRuleText] = useState('');
 
   useEffect(() => {
-    // Kayıtlı kural metnini yükle
-    AsyncStorage.getItem('botSettings').then((saved) => {
-      if (saved) {
-        const s = JSON.parse(saved);
-        if (s.customRule) setRuleText(s.customRule);
+    // Önce sunucudan çek, yoksa AsyncStorage'dan yükle
+    botBridge.getRuleMessage().then((res) => {
+      if (res && res.message) {
+        setRuleText(res.message);
+      } else {
+        AsyncStorage.getItem('botSettings').then((saved) => {
+          if (saved) {
+            const s = JSON.parse(saved);
+            if (s.customRule) setRuleText(s.customRule);
+          }
+        }).catch(() => {});
       }
-    }).catch(() => {});
+    }).catch(() => {
+      AsyncStorage.getItem('botSettings').then((saved) => {
+        if (saved) {
+          const s = JSON.parse(saved);
+          if (s.customRule) setRuleText(s.customRule);
+        }
+      }).catch(() => {});
+    });
   }, []);
 
   const getGroupId = () => {
