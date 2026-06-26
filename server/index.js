@@ -440,7 +440,12 @@ async function handleMessage(msg) {
         stats.messagesDeleted++;
         
         // Toplu ilan loglama: aynı kullanıcıdan 60sn içinde gelen silinenleri birleştir
-        const existingLog = deletedAdsLog.find(l => l.telefon === delUserPhone && l.grupId === delChatId && (Date.now() - new Date(l.timestamp).getTime() < 60000));
+        // userId veya telefon ile eşleştir (LID formatı için userId daha güvenli)
+        const existingLog = deletedAdsLog.find(l =>
+          l.grupId === delChatId &&
+          (Date.now() - new Date(l.timestamp).getTime() < 60000) &&
+          (l.telefon === delUserPhone || l.userId === delUserId || (delUserPhone && l.telefon && l.telefon === delUserPhone))
+        );
         if (existingLog) {
           existingLog.topluAdet = (existingLog.topluAdet || 1) + 1;
           existingLog.mesaj = `[${existingLog.topluAdet} resimli ilan] ${(delText || '📷').substring(0, 50)}`;
@@ -462,6 +467,7 @@ async function handleMessage(msg) {
             timestamp: new Date().toISOString(),
             kullanici: delUserName || delUserPhone,
             telefon: delUserPhone,
+            userId: delUserId,
             grupId: delChatId,
             grup: delGroupName,
             mesaj: delText || '(Resimli ilan)',
