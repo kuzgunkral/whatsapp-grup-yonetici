@@ -166,6 +166,7 @@
     <div class="card">
       <div class="card-title">🔄 Bot</div>
       <button class="btn btn-warning" onclick="restartBot()">🔄 Bot Restart</button>
+      <button class="btn btn-danger" onclick="logoutBot()" style="margin-top:8px">🔓 Oturumu Kapat (Başka Numara)</button>
     </div>
   </div>
 
@@ -341,6 +342,22 @@
     }
 
     async function restartBot() { if (!confirm('Bot restart edilecek?')) return; await fetch(API + '/api/restart', { method: 'POST' }); alert('Restart edildi'); }
+
+    async function logoutBot() {
+      if (!confirm('⚠️ Oturum kapatılacak!\n\nMevcut WhatsApp bağlantısı kesilir ve kayıtlı oturum silinir.\nYeni telefon numarası ile bağlanabilirsiniz.\n\nDevam edilsin mi?')) return;
+      try {
+        const res = await fetch(API + '/api/logout', { method: 'POST' });
+        const data = await res.json();
+        if (data.success) {
+          alert('✅ Oturum kapatıldı.\nSayfayı yenileyerek yeni numara ile bağlanabilirsiniz.');
+          location.reload();
+        } else {
+          alert('Hata: ' + (data.error || 'Bilinmeyen hata'));
+        }
+      } catch(e) {
+        alert('Sunucuya bağlanılamadı: ' + e.message);
+      }
+    }
 
     // ======= SİLİNEN İLANLAR =======
     let allDeletedAds = [];
