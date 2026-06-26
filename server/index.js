@@ -201,10 +201,19 @@ async function handleGroupJoin(update) {
     debugLog('handleGroupJoin: sending welcome to ' + update.id);
     const meta = await sock.groupMetadata(update.id);
     for (const p of update.participants) {
-      // Katılan üyenin adını grup metadata'sından bul (pushName yoksa numara)
-      let name = p.split('@')[0];
+      // participants hem string hem obje olabilir (Baileys versiyonuna göre)
+      const participantId = typeof p === 'string' ? p : (p.id || p.phoneNumber || String(p));
+      
+      // Gerçek telefon numarasını bul: phoneNumber alanı varsa onu kullan (LID yerine)
+      let mentionId = participantId;
+      if (typeof p === 'object' && p.phoneNumber) {
+        mentionId = p.phoneNumber; // "905060685034@s.whatsapp.net" formatı
+      }
+      
+      // Görünen isim: metadata'dan bul, yoksa numara
+      let name = mentionId.split('@')[0];
       try {
-        const participant = meta.participants.find(x => x.id === p);
+        const participant = meta.participants.find(x => x.id === participantId || x.id === mentionId);
         if (participant && participant.notify) name = participant.notify;
       } catch(e) {}
       
@@ -212,7 +221,7 @@ async function handleGroupJoin(update) {
         `╔══════════════════════╗\n` +
         `║   👋 HOŞ GELDİN!   ║\n` +
         `╚══════════════════════╝\n\n` +
-        `Merhaba @${p.split('@')[0]} 🎉\n\n` +
+        `Merhaba @${mentionId.split('@')[0]} 🎉\n\n` +
         `*${meta.subject}* grubuna hoş geldin!\n\n` +
         `📌 *Grup Kuralları:*\n` +
         `• İlanlarında mutlaka fiyat belirt\n` +
@@ -225,7 +234,7 @@ async function handleGroupJoin(update) {
 
       await sock.sendMessage(update.id, {
         text: welcomeMsg,
-        mentions: [p]
+        mentions: [mentionId]
       });
       stats.welcomesSent++;
       io.emit('log', { type: 'welcome', user: name, group: meta.subject });
