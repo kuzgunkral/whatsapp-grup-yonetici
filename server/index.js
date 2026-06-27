@@ -328,15 +328,18 @@ async function handleMessage(msg) {
 
     // === TOPLU RESİM + 1DK KURAL ===
     if (hasMedia) {
-      if (!spamTracker[userId]) spamTracker[userId] = { count: 0, lastTime: 0, warned10: false, hasPaid: false, paidTime: 0, ozelUyari: false, firstAdTime: 0, adCount: 0 };
+      if (!spamTracker[userId]) spamTracker[userId] = { count: 0, lastTime: 0, warned10: false, hasPaid: false, paidTime: 0, ozelUyari: false, ozelUyariTime: 0, firstAdTime: 0, adCount: 0 };
       const now = Date.now();
       
-      // 1dk'dan fazla geçtiyse yeni dönem
+      // 1dk'dan fazla geçtiyse yeni dönem (ozelUyari sıfırlanmaz - 1 saat geçmeli)
       if (now - spamTracker[userId].firstAdTime > 60000) {
         spamTracker[userId].count = 0;
         spamTracker[userId].warned10 = false;
         spamTracker[userId].hasPaid = false;
-        spamTracker[userId].ozelUyari = false;
+        // ozelUyari sadece 1 saat sonra sıfırlanır
+        if (!spamTracker[userId].ozelUyariTime || (now - spamTracker[userId].ozelUyariTime > 3600000)) {
+          spamTracker[userId].ozelUyari = false;
+        }
         spamTracker[userId].adCount = 0;
       }
       
@@ -355,11 +358,12 @@ async function handleMessage(msg) {
       // 5sn içinde gelenler aynı toplu ilan
       const isPartOfFirst = (now - spamTracker[userId].firstAdTime < 5000);
       
-      // 2. ilan (5sn'den sonra, 1dk'dan önce gelen) → sil + DM 1 kere
+      // 2. ilan (5sn'den sonra, 1dk'dan önce gelen) → sil + DM 1 saatte 1 kere
       if (!isPartOfFirst && (now - spamTracker[userId].firstAdTime < 60000) && spamTracker[userId].adCount >= 1) {
         spamTracker[userId].adCount++;
-        if (!spamTracker[userId].ozelUyari) {
+        if (!spamTracker[userId].ozelUyari || (now - (spamTracker[userId].ozelUyariTime || 0) > 3600000)) {
           spamTracker[userId].ozelUyari = true;
+          spamTracker[userId].ozelUyariTime = now;
           try { await sock.sendMessage(userId, { text: `⚠️ 1 dakikada 1 ilan atabilirsiniz. Lütfen bekleyiniz.\n\n🛡️ _${groupName} Yönetimi_` }); } catch(e) {}
         }
         const delKey = getDeleteKey(msg);

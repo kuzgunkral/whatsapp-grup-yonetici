@@ -19,7 +19,7 @@ var isReady = false;
 var botStartTime = 0;
 var connectedGroups = [];
 var activeGroupId = null;
-var spamTracker = {};
+var spamTracker = {};   // { userId: { firstAdTime, adCount, ozelUyari, ozelUyariTime } }
 var pausedGroups = {};
 var mutedUsers = {};
 var noPriceCounter = {};
@@ -224,6 +224,38 @@ async function handleMessage(msg) {
     var fiyatNoktali = /\d{1,3}[\.,]\d{3}/;
     var kmVar = /km/i;
     var hasFiyat = fiyatPattern.test(msgText) || fiyatKelime.test(msgText) || ((fiyatBuyukSayi.test(msgText) || fiyatNoktali.test(msgText)) && !kmVar.test(msgText));
+
+    // === 1 DAKİKADA 1 İLAN KONTROLÜ (fiyatlı da olsa) ===
+    var nowTs = Date.now();
+    if (!spamTracker[userId]) spamTracker[userId] = { firstAdTime: 0, adCount: 0, ozelUyari: false, ozelUyariTime: 0 };
+    var tracker = spamTracker[userId];
+
+    // 1dk geçtiyse yeni dönem başlat (ozelUyari 1 saat korunur)
+    if (nowTs - tracker.firstAdTime > 60000) {
+      tracker.adCount = 0;
+      tracker.firstAdTime = nowTs;
+      // ozelUyari sadece 1 saat sonra sıfırlanır
+      if (nowTs - tracker.ozelUyariTime > 3600000) {
+        tracker.ozelUyari = false;
+      }
+    }
+
+    if (tracker.adCount === 0) {
+      // İlk ilan bu dönemde
+      tracker.adCount = 1;
+      tracker.firstAdTime = nowTs;
+    } else if (nowTs - tracker.firstAdTime < 60000) {
+      // 1dk dolmadan 2. ilan → sil + DM uyarı (1 saatte 1 kez)
+      tracker.adCount++;
+      if (!tracker.ozelUyari || (nowTs - tracker.ozelUyariTime > 3600000)) {
+        tracker.ozelUyari = true;
+        tracker.ozelUyariTime = nowTs;
+        try { await sock.sendMessage(userId, { text: '\u26A0\uFE0F 1 dakikada 1 ilan atabilirsiniz. L\u00fctfen bekleyiniz.\n\n\u{1F6E1}\uFE0F _Grup Y\u00f6netimi_' }); } catch(e) {}
+      }
+      try { await sock.sendMessage(chatId, { delete: msg.key }); } catch(e) {}
+      stats.messagesDeleted++;
+      return;
+    }
 
     if (hasFiyat) return;
 
