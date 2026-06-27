@@ -40,15 +40,21 @@ const ModerationScreen = () => {
     return botBridge._activeGroupId || botBridge.groups[0]?.id || null;
   };
 
+  const SERVER_URL = 'https://whatsapp-grup-yonetici-production.up.railway.app';
+
   const loadMembersAuto = async () => {
-    if (!botBridge.isConnected) return;
     const gid = getActiveGroupId();
     if (!gid) return;
     setLoading(true);
     try {
-      const res = await fetch(`${botBridge.constructor._serverUrl || 'https://whatsapp-grup-yonetici-production.up.railway.app'}/api/members?groupId=${gid}`);
+      const res = await fetch(`${SERVER_URL}/api/members?groupId=${gid}`);
       const data = await res.json();
-      if (data.members) { setMembers(data.members); }
+      if (data.members && data.members.length > 0) {
+        setMembers(data.members);
+        // isMuted bilgisini mutedSet'e senkronize et
+        const muted = new Set(data.members.filter(m => m.isMuted).map(m => m.id));
+        setMutedSet(muted);
+      }
     } catch(e) {}
     setLoading(false);
   };
@@ -58,9 +64,13 @@ const ModerationScreen = () => {
     if (!gid) { Alert.alert('Uyarı', 'Önce Ana Sayfa\'dan grup seçin'); return; }
     setLoading(true);
     try {
-      const res = await fetch(`https://whatsapp-grup-yonetici-production.up.railway.app/api/members?groupId=${gid}`);
+      const res = await fetch(`${SERVER_URL}/api/members?groupId=${gid}`);
       const data = await res.json();
-      if (data.members) { setMembers(data.members); }
+      if (data.members) {
+        setMembers(data.members);
+        const muted = new Set(data.members.filter(m => m.isMuted).map(m => m.id));
+        setMutedSet(muted);
+      }
     } catch(e) { Alert.alert('Hata', 'Üyeler yüklenemedi'); }
     setLoading(false);
   };

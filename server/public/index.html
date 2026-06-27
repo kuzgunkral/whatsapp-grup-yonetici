@@ -385,9 +385,10 @@
 
     async function sendMessage() {
       if (!activeGroupId) { alert('Grup seçin'); return; }
-      const msg = document.getElementById('msgText').value;
+      const msg = document.getElementById('msgText').value.trim();
       if (!msg) return;
-      await fetch(API + '/api/send-message', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({groupId: activeGroupId, message: msg}) });
+      // WhatsApp ~metin~ = üstü çizili format
+      await fetch(API + '/api/send-message', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({groupId: activeGroupId, message: `~${msg}~`}) });
       document.getElementById('msgText').value = '';
       alert('Gönderildi');
     }
