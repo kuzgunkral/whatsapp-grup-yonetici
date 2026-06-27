@@ -381,10 +381,12 @@ async function handleMessage(msg) {
       if (res5dk === 'deleted') return;
       // res5dk === 'new_period' veya 'continue' → devam
 
-      // 2. 10 resim limiti (fiyatlı ilanlar)
-      const res10 = await kural10Limit({ ...ctx, spamTracker });
-      if (res10 === 'deleted') return;
-      if (res10 === 'paid_ok') return; // Fiyatlı, 10 veya altında → koru
+      // 2. Fiyatlı resim ise (caption'da fiyat var veya hasPaid aktif) → kural10 kontrol et, koru
+      if (hasFiyat) {
+        const res10 = await kural10Limit({ ...ctx, spamTracker });
+        if (res10 === 'deleted') return;
+        return; // Fiyatlı resim → koru
+      }
 
       // 3. Fiyatsız resim → 30sn bekle
       await kuralFiyatsizResim({
