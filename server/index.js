@@ -626,11 +626,14 @@ app.post('/api/restore-ad', async (req, res) => {
   try {
     const target = groupId || activeGroupId;
     if (!target) return res.json({ success: false, error: 'Hedef grup yok' });
-    if (ad.medyaListesi && ad.medyaListesi.length > 1) {
-      for (const m of ad.medyaListesi) {
+    if (ad.medyaListesi && ad.medyaListesi.length > 0) {
+      // İlk resme caption, diğerlerine boş — toplu gibi görünsün
+      for (let i = 0; i < ad.medyaListesi.length; i++) {
+        const m = ad.medyaListesi[i];
         const buf = Buffer.from(m.data, 'base64');
-        await sock.sendMessage(target, { image: buf, caption: m.caption || ad.mesaj || '' });
-        await new Promise(r => setTimeout(r, 300));
+        const caption = i === 0 ? (ad.mesaj || '') : '';
+        await sock.sendMessage(target, { image: buf, caption });
+        if (i < ad.medyaListesi.length - 1) await new Promise(r => setTimeout(r, 200));
       }
     } else if (ad.medyaData) {
       const buf = Buffer.from(ad.medyaData, 'base64');
@@ -645,9 +648,6 @@ app.post('/api/restore-ad', async (req, res) => {
     } else {
       return res.json({ success: false, error: 'Geri yüklenecek içerik yok' });
     }
-    const msgId = ad.userId ? ad.userId.split('@')[0] : 'unknown';
-    const notifyText = `✅ *Geri Yüklenen İlan*\n📱 Kullanıcı: ${ad.kullanici || ad.telefon}\n📅 Tarih: ${ad.tarih} ${ad.saat}\n🏠 Grup: ${ad.grup}`;
-    await sock.sendMessage(target, { text: notifyText });
     res.json({ success: true });
   } catch(e) { res.json({ success: false, error: e.message }); }
 });
@@ -664,9 +664,14 @@ app.post('/api/restore-as-ad', async (req, res) => {
     if (!target) return res.json({ success: false, error: 'Hedef grup yok' });
     const adText = `📢 *Reklam İlan*\n\n${ad.mesaj || ''}\n\n📱 Kişi: ${ad.kullanici || ad.telefon}\n🛡️ _Grup Yönetimi_`;
     if (ad.medyaListesi && ad.medyaListesi.length > 0) {
-      const m = ad.medyaListesi[0];
-      const buf = Buffer.from(m.data, 'base64');
-      await sock.sendMessage(target, { image: buf, caption: adText });
+      // Tüm resimleri gönder — ilki caption'lı, geri kalanlar sade
+      for (let i = 0; i < ad.medyaListesi.length; i++) {
+        const m = ad.medyaListesi[i];
+        const buf = Buffer.from(m.data, 'base64');
+        const caption = i === 0 ? adText : '';
+        await sock.sendMessage(target, { image: buf, caption });
+        if (i < ad.medyaListesi.length - 1) await new Promise(r => setTimeout(r, 300));
+      }
     } else if (ad.medyaData) {
       const buf = Buffer.from(ad.medyaData, 'base64');
       await sock.sendMessage(target, { image: buf, caption: adText });
