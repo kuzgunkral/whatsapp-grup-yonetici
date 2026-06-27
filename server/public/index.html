@@ -189,7 +189,7 @@
           <span>5 sn</span><span>120 sn</span>
         </div>
       </div>
-      <div>
+      <div style="margin-bottom:16px;">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
           <span style="font-size:14px;">🕐 İlan Atma Aralığı</span>
           <span style="font-size:14px;font-weight:bold;color:#00a884;" id="adIntervalLabel">5 dk</span>
@@ -200,6 +200,19 @@
           onchange="saveAdInterval(this.value)">
         <div style="display:flex;justify-content:space-between;font-size:11px;color:#8696a0;margin-top:2px;">
           <span>1 dk</span><span>60 dk</span>
+        </div>
+      </div>
+      <div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+          <span style="font-size:14px;">🔔 Kural Hatırlatma Aralığı</span>
+          <span style="font-size:14px;font-weight:bold;color:#00a884;" id="ruleIntervalLabel">6 saat</span>
+        </div>
+        <input type="range" id="ruleIntervalSlider" min="1" max="12" step="1" value="6"
+          style="width:100%;accent-color:#00a884;cursor:pointer;"
+          oninput="document.getElementById('ruleIntervalLabel').textContent=this.value+' saat'"
+          onchange="saveRuleInterval(this.value)">
+        <div style="display:flex;justify-content:space-between;font-size:11px;color:#8696a0;margin-top:2px;">
+          <span>1 saat</span><span>12 saat</span>
         </div>
       </div>
     </div>
@@ -470,6 +483,10 @@
       await fetch(API + '/api/set-ad-interval', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({minutes: parseFloat(val)}) });
     }
 
+    async function saveRuleInterval(val) {
+      await fetch(API + '/api/set-rule-interval', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({hours: parseInt(val)}) });
+    }
+
     async function loadSettings() {
       try {
         const res = await fetch(API + '/api/settings');
@@ -486,6 +503,10 @@
         if (data.adIntervalMin !== undefined) {
           document.getElementById('adIntervalSlider').value = data.adIntervalMin;
           document.getElementById('adIntervalLabel').textContent = data.adIntervalMin + ' dk';
+        }
+        if (data.ruleIntervalHours !== undefined) {
+          document.getElementById('ruleIntervalSlider').value = data.ruleIntervalHours;
+          document.getElementById('ruleIntervalLabel').textContent = data.ruleIntervalHours + ' saat';
         }
       } catch(e) {}
     }

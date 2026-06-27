@@ -339,6 +339,8 @@ async function handleMessage(msg) {
       }
     } catch(e) {
       userPhone = userId.split('@')[0];
+      // groupMetadata başarısız olduysa chatId'yi temizle
+      if (groupName === chatId) groupName = 'Bilinmeyen Grup';
     }
     if (!userName) userName = userPhone;
 
