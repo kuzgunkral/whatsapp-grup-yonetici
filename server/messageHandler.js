@@ -39,24 +39,25 @@ async function kural5dkLimit({ sock, chatId, realUserId, groupName, msg, userId,
   if (now - t.warned10Time > ONE_HOUR) t.warned10 = false;
   if (now - t.ozelUyariTime > ONE_HOUR) t.ozelUyari = false;
 
-  // Dönem geçtiyse sıfırla
-  if (now - t.firstAdTime > FIVE_MIN) {
+  // Fiyatlı dönem geçtiyse sıfırla (sadece fiyatlı ilanın firstAdTime'ı sayılır)
+  if (t.firstAdTime > 0 && now - t.firstAdTime > FIVE_MIN) {
     t.count = 0;
     t.hasPaid = false;
     t.adCount = 0;
+    t.firstAdTime = 0;
   }
 
   t.count++;
   t.lastTime = now;
 
-  // İlk ilan başlangıcı
-  if (t.adCount === 0) {
+  // İlk fiyatlı ilan başlangıcı — sadece fiyatlı gelince dönem başlar
+  if (hasFiyat && t.adCount === 0) {
     t.adCount = 1;
     t.firstAdTime = now;
+    t.hasPaid = true;
+    t.paidTime = now;
+    return 'continue'; // İlk fiyatlı ilan, devam et
   }
-
-  // 30sn içinde gelenler aynı toplu ilan (WhatsApp toplu resim gönderimi)
-  const isPartOfFirst = (now - t.firstAdTime < 30000);
 
   // Fiyat varsa hasPaid işaretle
   if (hasFiyat) {
@@ -64,8 +65,17 @@ async function kural5dkLimit({ sock, chatId, realUserId, groupName, msg, userId,
     t.paidTime = now;
   }
 
-  // 2. ilan (5sn'den sonra, adInterval'dan önce)
-  if (!isPartOfFirst && (now - t.firstAdTime < FIVE_MIN) && t.adCount >= 1) {
+  // Fiyatsız ilan — henüz fiyatlı ilan atılmamışsa bu kural devreye girmez
+  // (kuralFiyatsizResim veya kuralFiyatsizMetin halleder)
+  if (!hasFiyat && t.adCount === 0) {
+    return 'continue';
+  }
+
+  // 30sn içinde gelenler aynı toplu ilan (WhatsApp toplu resim gönderimi)
+  const isPartOfFirst = t.firstAdTime > 0 && (now - t.firstAdTime < 30000);
+
+  // 2. ilan — 5dk dolmadan yeni ilan
+  if (!isPartOfFirst && t.firstAdTime > 0 && (now - t.firstAdTime < FIVE_MIN) && t.adCount >= 1) {
     if (hasFiyat) {
       // Fiyatlı resim yeni dönem başlatır
       t.adCount = 1;
@@ -73,8 +83,7 @@ async function kural5dkLimit({ sock, chatId, realUserId, groupName, msg, userId,
       t.count = 1;
       return 'new_period';
     } else {
-      // Fiyatsız ilan silinir ama adCount artırılmaz — fiyatlı ilanın 5dk hakkı korunur
-      // t.adCount değişmez, firstAdTime değişmez
+      // Fiyatsız ilan silinir — fiyatlı ilanın 5dk hakkı korunur
       if (!t.ozelUyari || (now - t.ozelUyariTime > ONE_HOUR)) {
         t.ozelUyari = true;
         t.ozelUyariTime = now;
