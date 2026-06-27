@@ -73,7 +73,8 @@ async function kural5dkLimit({ sock, chatId, realUserId, groupName, msg, userId,
       t.count = 1;
       return 'new_period';
     } else {
-      t.adCount++;
+      // Fiyatsız ilan silinir ama adCount artırılmaz — fiyatlı ilanın 5dk hakkı korunur
+      // t.adCount değişmez, firstAdTime değişmez
       if (!t.ozelUyari || (now - t.ozelUyariTime > ONE_HOUR)) {
         t.ozelUyari = true;
         t.ozelUyariTime = now;
