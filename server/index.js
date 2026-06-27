@@ -198,7 +198,7 @@ async function loadGroups() {
 
 async function handleGroupJoin(update) {
   try {
-    if (activeGroupId && update.id !== activeGroupId) return;
+    if (!activeGroupId || update.id !== activeGroupId) return;
     debugLog('handleGroupJoin: sending welcome to ' + update.id);
     const meta = await sock.groupMetadata(update.id);
     for (const p of update.participants) {
@@ -270,8 +270,9 @@ async function handleMessage(msg) {
     const chatId = msg.key.remoteJid;
     if (!chatId || !chatId.endsWith('@g.us')) return;
     if (pausedGroups.has(chatId)) return;
+    // Aktif grup seçili değilse veya bu mesaj aktif gruptan değilse işleme
+    if (!activeGroupId || chatId !== activeGroupId) return;
     debugLog('handleMsg: chatId=' + chatId + ' activeGroupId=' + activeGroupId);
-    if (activeGroupId && chatId !== activeGroupId) return;
 
     const isFromMe = msg.key.fromMe;
 
