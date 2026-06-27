@@ -69,7 +69,8 @@ const MessagesScreen = () => {
     const gid = getGroupId();
     if (!gid) return;
     if (!customMsg.trim()) { Alert.alert('Uyarı', 'Mesaj yazın'); return; }
-    await botBridge.sendMessage(gid, customMsg);
+    // WhatsApp ~metin~ = üstü çizili format
+    await botBridge.sendMessage(gid, `~${customMsg.trim()}~`);
     Alert.alert('✅', 'Gönderildi');
     setCustomMsg('');
   };
