@@ -173,6 +173,35 @@
       </div>
     </div>
     <div class="card">
+      <div class="card-title">⏱️ Zamanlama Ayarları</div>
+      <div style="margin-bottom:16px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+          <span style="font-size:14px;">📸 Fiyatsız Resim Bekleme Süresi</span>
+          <span style="font-size:14px;font-weight:bold;color:#00a884;" id="photoWaitLabel">30 sn</span>
+        </div>
+        <input type="range" id="photoWaitSlider" min="5" max="120" step="5" value="30"
+          style="width:100%;accent-color:#00a884;cursor:pointer;"
+          oninput="document.getElementById('photoWaitLabel').textContent=this.value+' sn'"
+          onchange="savePhotoWait(this.value)">
+        <div style="display:flex;justify-content:space-between;font-size:11px;color:#8696a0;margin-top:2px;">
+          <span>5 sn</span><span>120 sn</span>
+        </div>
+      </div>
+      <div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+          <span style="font-size:14px;">🕐 İlan Atma Aralığı</span>
+          <span style="font-size:14px;font-weight:bold;color:#00a884;" id="adIntervalLabel">5 dk</span>
+        </div>
+        <input type="range" id="adIntervalSlider" min="1" max="60" step="1" value="5"
+          style="width:100%;accent-color:#00a884;cursor:pointer;"
+          oninput="document.getElementById('adIntervalLabel').textContent=this.value+' dk'"
+          onchange="saveAdInterval(this.value)">
+        <div style="display:flex;justify-content:space-between;font-size:11px;color:#8696a0;margin-top:2px;">
+          <span>1 dk</span><span>60 dk</span>
+        </div>
+      </div>
+    </div>
+    <div class="card">
       <div class="card-title">🔄 Bot</div>
       <button class="btn btn-warning" onclick="restartBot()">🔄 Bot Restart</button>
       <button class="btn btn-danger" onclick="logoutBot()" style="margin-top:8px">🔓 Oturumu Kapat (Başka Numara)</button>
@@ -409,6 +438,34 @@
       if (val) el.classList.add('on'); else el.classList.remove('on');
     }
 
+    async function savePhotoWait(val) {
+      await fetch(API + '/api/set-photo-wait', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({seconds: parseInt(val)}) });
+    }
+
+    async function saveAdInterval(val) {
+      await fetch(API + '/api/set-ad-interval', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({minutes: parseFloat(val)}) });
+    }
+
+    async function loadSettings() {
+      try {
+        const res = await fetch(API + '/api/settings');
+        const data = await res.json();
+        if (data.automation) {
+          setToggle('toggleWelcome', data.automation.welcome);
+          setToggle('toggleNoPrice', data.automation.noPrice);
+          setToggle('toggleRules', data.automation.rules);
+        }
+        if (data.photoWaitSec !== undefined) {
+          document.getElementById('photoWaitSlider').value = data.photoWaitSec;
+          document.getElementById('photoWaitLabel').textContent = data.photoWaitSec + ' sn';
+        }
+        if (data.adIntervalMin !== undefined) {
+          document.getElementById('adIntervalSlider').value = data.adIntervalMin;
+          document.getElementById('adIntervalLabel').textContent = data.adIntervalMin + ' dk';
+        }
+      } catch(e) {}
+    }
+
     async function restartBot() { if (!confirm('Bot restart edilecek?')) return; await fetch(API + '/api/restart', { method: 'POST' }); alert('Restart edildi'); }
 
     async function logoutBot() {
@@ -524,7 +581,11 @@
       event.currentTarget.classList.add('active');
       if (name === 'mod') loadMembers();
       if (name === 'log') loadDeletedAds();
+      if (name === 'settings') loadSettings();
     }
+
+    // Ayarlar sayfası ilk yüklemede de çalışsın
+    loadSettings();
   </script>
 </body>
 </html>

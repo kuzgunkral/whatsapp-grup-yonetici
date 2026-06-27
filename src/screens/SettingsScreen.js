@@ -18,6 +18,8 @@ const SettingsScreen = () => {
   const [deleteDelay, setDeleteDelay] = useState(60);
   const [ruleInterval, setRuleInterval] = useState(6);
   const [customRule, setCustomRule] = useState('');
+  const [photoWaitSec, setPhotoWaitSec] = useState(30);
+  const [adIntervalMin, setAdIntervalMin] = useState(5);
   const [loaded, setLoaded] = useState(false);
 
   // Sayfa açılışında ayarları yükle (önce lokal, sonra sunucu)
@@ -45,6 +47,21 @@ const SettingsScreen = () => {
         setDeleteDelay(s.deleteDelay ?? 60);
         setRuleInterval(s.ruleInterval ?? 6);
         setCustomRule(s.customRule || '');
+        setPhotoWaitSec(s.photoWaitSec ?? 30);
+        setAdIntervalMin(s.adIntervalMin ?? 5);
+      }
+    } catch (e) {}
+    // Sunucudan da yükle (en güncel değerleri al)
+    try {
+      const srv = await botBridge.getSettings();
+      if (srv && !srv.error) {
+        if (srv.photoWaitSec !== undefined) setPhotoWaitSec(srv.photoWaitSec);
+        if (srv.adIntervalMin !== undefined) setAdIntervalMin(srv.adIntervalMin);
+        if (srv.automation) {
+          setWelcome(srv.automation.welcome ?? true);
+          setNoPrice(srv.automation.noPrice ?? true);
+          setRules(srv.automation.rules ?? true);
+        }
       }
     } catch (e) {}
     setLoaded(true);
@@ -78,6 +95,20 @@ const SettingsScreen = () => {
     setRuleInterval(h);
     saveLocal('ruleInterval', h);
     botBridge.setRuleInterval(h);
+  };
+
+  const handlePhotoWaitChange = (v) => {
+    const s = Math.round(v);
+    setPhotoWaitSec(s);
+    saveLocal('photoWaitSec', s);
+    botBridge.setPhotoWait(s);
+  };
+
+  const handleAdIntervalChange = (v) => {
+    const m = parseFloat(v.toFixed(1));
+    setAdIntervalMin(m);
+    saveLocal('adIntervalMin', m);
+    botBridge.setAdInterval(m);
   };
 
   const handleSaveRule = () => {
@@ -161,16 +192,34 @@ const SettingsScreen = () => {
       {/* Zamanlama */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>⏱️ Zamanlama</Text>
+
         <Text style={styles.sliderLabel}>Silme Süresi: {deleteDelay} saniye</Text>
         <Slider
           minimumValue={10} maximumValue={120} step={5}
           value={deleteDelay} onSlidingComplete={handleDelayChange}
           minimumTrackTintColor="#00a884" maximumTrackTintColor="#3b4a54" thumbTintColor="#00a884"
         />
+
         <Text style={[styles.sliderLabel, { marginTop: 16 }]}>Kural Hatırlatma: Her {ruleInterval} saat</Text>
         <Slider
           minimumValue={1} maximumValue={12} step={1}
           value={ruleInterval} onSlidingComplete={handleIntervalChange}
+          minimumTrackTintColor="#00a884" maximumTrackTintColor="#3b4a54" thumbTintColor="#00a884"
+        />
+
+        <Text style={[styles.sliderLabel, { marginTop: 16 }]}>📸 Fiyatsız Resim Bekleme: {photoWaitSec} saniye</Text>
+        <Text style={styles.sliderDesc}>Resim gelince bu kadar bekler, caption'da fiyat yoksa siler</Text>
+        <Slider
+          minimumValue={5} maximumValue={120} step={5}
+          value={photoWaitSec} onSlidingComplete={handlePhotoWaitChange}
+          minimumTrackTintColor="#00a884" maximumTrackTintColor="#3b4a54" thumbTintColor="#00a884"
+        />
+
+        <Text style={[styles.sliderLabel, { marginTop: 16 }]}>🕐 İlan Atma Aralığı: {adIntervalMin} dakika</Text>
+        <Text style={styles.sliderDesc}>Aynı kullanıcı bu süre dolmadan 2. ilan atamaz</Text>
+        <Slider
+          minimumValue={1} maximumValue={60} step={1}
+          value={adIntervalMin} onSlidingComplete={handleAdIntervalChange}
           minimumTrackTintColor="#00a884" maximumTrackTintColor="#3b4a54" thumbTintColor="#00a884"
         />
       </View>
@@ -231,6 +280,7 @@ const styles = StyleSheet.create({
   label: { color: '#e9edef', fontSize: 14 },
   desc: { color: '#8696a0', fontSize: 11, marginTop: 2 },
   sliderLabel: { color: '#e9edef', fontSize: 13, marginBottom: 4 },
+  sliderDesc: { color: '#8696a0', fontSize: 11, marginBottom: 4 },
   textArea: { backgroundColor: '#2a3942', borderRadius: 8, padding: 14, color: '#e9edef', borderWidth: 1, borderColor: '#3b4a54', minHeight: 80, textAlignVertical: 'top', marginBottom: 12 },
   saveBtn: { backgroundColor: '#00a884', paddingVertical: 12, borderRadius: 8, alignItems: 'center' },
   saveBtnText: { color: '#fff', fontWeight: '600' },

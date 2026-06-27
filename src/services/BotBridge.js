@@ -90,6 +90,9 @@ class BotBridge extends EventEmitter {
   setDeleteDelay(seconds) { this._post('/api/set-delete-delay', { delay: seconds }); }
   setRuleInterval(hours) { this._post('/api/set-rule-interval', { hours }); }
   setCustomRule(message) { this._post('/api/set-rule-message', { message }); }
+  setPhotoWait(seconds) { this._post('/api/set-photo-wait', { seconds }); }
+  setAdInterval(minutes) { this._post('/api/set-ad-interval', { minutes }); }
+  async getSettings() { return await this._get('/api/settings'); }
   async getRuleMessage() { return await this._get('/api/get-rule-message'); }
   async cleanNoPrice(groupId) { return await this._post('/api/clean-no-price', { groupId }); }
   restart() { this._post('/api/restart'); }

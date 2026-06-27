@@ -6,8 +6,18 @@ const QRCode = require('qrcode');
 const pino = require('pino');
 const fs = require('fs');
 const path = require('path');
+const { hasFiyatMi, kural5dkLimit, kural10Limit, kuralFiyatsizResim, kuralFiyatsizMetin } = require('./messageHandler');
 
 let makeWASocket, useMultiFileAuthState, makeCacheableSignalKeyStore;
+
+// ─── DEBUG LOG ────────────────────────────────────────────────────────────────
+const debugLog = (() => {
+  const LOG_PATH = process.env.DATA_DIR ? path.join(process.env.DATA_DIR, 'debug.log') : './debug.log';
+  return (msg) => {
+    const line = `[${new Date().toISOString()}] ${msg}\n`;
+    try { fs.appendFileSync(LOG_PATH, line); } catch(e) {}
+  };
+})();
 
 const app = express();
 app.use(cors());
@@ -21,22 +31,25 @@ let isReady = false;
 let botStartTime = 0;
 let connectedGroups = [];
 let activeGroupId = null;
-// Restart'ta aktif grubu dosyadan oku
-try { const saved = fs.readFileSync(ACTIVE_GROUP_FILE, 'utf8').trim(); if (saved) activeGroupId = saved; } catch(e) {}
 let spamTracker = {};
 let pausedGroups = new Set();
 let mutedUsers = new Set();
 let noPriceCounter = {};
 let noPriceTimers = {};
-let contactNames = {}; // userId → pushName (mesaj gelince güncellenir)
-let lastSentKeys = {}; // groupId → son gönderilen mesajın key'i (pin için)
+let contactNames = {};
+let lastSentKeys = {};
 let reklamMuafMsgIds = new Set();
-// Grup mesaj cache'i — clean-no-price için (son 500 mesaj/grup)
-const groupMessages = {}; // groupId → [msg, ...]
+const groupMessages = {};
 let deletedAdsLog = [];
 let stats = { messagesDeleted: 0, welcomesSent: 0, rulesReminded: 0, spammersRemoved: 0 };
-// stats.messagesDeleted startup'ta log'dan yüklenir (loadDeletedLog sonrası)
-let config = { automation: { welcome: true, noPrice: true, rules: true }, deleteDelay: 60000, ruleIntervalHours: 6, customRuleMessage: null };
+let config = {
+  automation: { welcome: true, noPrice: true, rules: true },
+  deleteDelay: 60000,
+  ruleIntervalHours: 6,
+  customRuleMessage: null,
+  photoWaitSec: 30,
+  adIntervalMin: 5
+};
 let currentQR = null;
 let currentPairingCode = null;
 
@@ -45,11 +58,13 @@ const LOG_FILE = process.env.DATA_DIR ? path.join(process.env.DATA_DIR, 'deleted
 const CONFIG_FILE = process.env.DATA_DIR ? path.join(process.env.DATA_DIR, 'bot-config.json') : './bot-config.json';
 const ACTIVE_GROUP_FILE = process.env.DATA_DIR ? path.join(process.env.DATA_DIR, 'active-group.txt') : './active-group.txt';
 
-function loadDeletedLog() { 
-  try { 
+// Restart'ta aktif grubu dosyadan oku
+try { const saved = fs.readFileSync(ACTIVE_GROUP_FILE, 'utf8').trim(); if (saved) activeGroupId = saved; } catch(e) {}
+
+function loadDeletedLog() {
+  try {
     if (fs.existsSync(LOG_FILE)) {
       const stat = fs.statSync(LOG_FILE);
-      // 10MB'den buyukse sifirla
       if (stat.size > 10 * 1024 * 1024) {
         console.log('⚠️ Log dosyası çok büyük, sıfırlanıyor...');
         fs.writeFileSync(LOG_FILE, '[]', 'utf8');
@@ -57,50 +72,40 @@ function loadDeletedLog() {
         return;
       }
       deletedAdsLog = JSON.parse(fs.readFileSync(LOG_FILE, 'utf8'));
-      // Max 500 kayit
       if (deletedAdsLog.length > 500) {
         deletedAdsLog = deletedAdsLog.slice(0, 500);
         fs.writeFileSync(LOG_FILE, JSON.stringify(deletedAdsLog), 'utf8');
       }
     }
-  } catch(e) { 
+  } catch(e) {
     console.error('Log okunamadı:', e.message);
     deletedAdsLog = [];
-  } 
+  }
 }
 function saveDeletedLog() { try { fs.writeFileSync(LOG_FILE, JSON.stringify(deletedAdsLog), 'utf8'); } catch(e) {} }
 function loadConfig() { try { if (fs.existsSync(CONFIG_FILE)) config = { ...config, ...JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8')) }; } catch(e) {} }
 function saveConfig() { try { fs.writeFileSync(CONFIG_FILE, JSON.stringify(config), 'utf8'); } catch(e) {} }
 
-// Startup'ta log ve config yükle, stats'ı log'dan başlat
+// Startup'ta log ve config yükle
 loadDeletedLog();
 loadConfig();
-stats.messagesDeleted = deletedAdsLog.length;
 
 async function connect(phoneNumber) {
   try {
-    // Baileys'i dynamic import et (ESM modül)
     if (!makeWASocket) {
       const baileys = await import('baileys');
       makeWASocket = baileys.makeWASocket;
       useMultiFileAuthState = baileys.useMultiFileAuthState;
       makeCacheableSignalKeyStore = baileys.makeCacheableSignalKeyStore;
     }
-
-    // Eski bağlantıyı kapat
     if (sock) {
       try { sock.end(); } catch(e) {}
       sock = null;
     }
-
     debugLog('connect() called with phone: ' + (phoneNumber || 'none'));
-
-    // Startup'ta zaten yüklendi, reconnect'te tekrar yükleme
     if (!fs.existsSync(AUTH_DIR)) fs.mkdirSync(AUTH_DIR, { recursive: true });
-
     const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
     debugLog('Auth state loaded, registered: ' + state.creds.registered);
-
     sock = makeWASocket({
       auth: { creds: state.creds, keys: makeCacheableSignalKeyStore(state.keys, pino({ level: 'silent' })) },
       printQRInTerminal: false,
@@ -110,10 +115,6 @@ async function connect(phoneNumber) {
       keepAliveIntervalMs: 30000,
       markOnlineOnConnect: false,
     });
-
-    debugLog('Socket created, requesting pairing code...');
-
-    // QR veya Pairing Code
     if (!state.creds.registered && phoneNumber) {
       setTimeout(async () => {
         try {
@@ -127,32 +128,26 @@ async function connect(phoneNumber) {
     } else {
       debugLog('Skipped pairing: registered=' + state.creds.registered + ' phone=' + phoneNumber);
     }
-
     sock.ev.on('creds.update', saveCreds);
-
     sock.ev.on('connection.update', (update) => {
       const { connection, lastDisconnect, qr } = update;
       debugLog('connection.update: ' + JSON.stringify({ connection, qr: !!qr, lastDisconnect: lastDisconnect?.error?.message }));
-
       if (qr) {
         currentQR = qr;
         io.emit('qr', qr);
         debugLog('QR code generated');
       }
-
       if (connection === 'close') {
         isReady = false;
         io.emit('status', { connected: false });
         const code = lastDisconnect?.error?.output?.statusCode;
         debugLog('Connection closed, statusCode: ' + code);
-        // 405 = IP blocked, 401/403 = auth error - reconnect etme
         if (code !== 401 && code !== 403 && code !== 405) {
           setTimeout(() => connect(phoneNumber), 5000);
         } else {
           debugLog('Not reconnecting due to status: ' + code);
         }
       }
-
       if (connection === 'open') {
         isReady = true;
         currentQR = null;
@@ -163,14 +158,11 @@ async function connect(phoneNumber) {
         debugLog('WhatsApp connected!');
       }
     });
-
     sock.ev.on('messages.upsert', (m) => {
       debugLog('messages.upsert received: ' + (m.messages ? m.messages.length : 0) + ' msgs, type: ' + m.type);
       if (m.type !== 'notify') return;
       m.messages.forEach(msg => {
-        // Protocol mesajı: üye ekleme bildirimini yakala
         if (msg.messageStubType === 27 || msg.messageStubType === 'GROUP_PARTICIPANT_ADD') {
-          // Grup katılım bildirimi
           if (config.automation.welcome && msg.key.remoteJid && msg.key.remoteJid.endsWith('@g.us')) {
             const participants = msg.messageStubParameters || [];
             if (participants.length > 0) {
@@ -183,16 +175,13 @@ async function connect(phoneNumber) {
         handleMessage(msg);
       });
     });
-
     sock.ev.on('group-participants.update', (update) => {
       debugLog('group-participants.update: action=' + update.action + ' group=' + update.id + ' participants=' + JSON.stringify(update.participants));
       if (!config.automation.welcome) { debugLog('Welcome disabled, skipping'); return; }
       if (update.action !== 'add') return;
-      // Sadece seçili grupta hoşgeldin at
       if (activeGroupId && update.id !== activeGroupId) { debugLog('Welcome skipped: not active group'); return; }
       handleGroupJoin(update);
     });
-
   } catch(e) {
     console.error('Connection error:', e.message);
     setTimeout(() => connect(), 10000);
@@ -209,27 +198,20 @@ async function loadGroups() {
 
 async function handleGroupJoin(update) {
   try {
-    // Sadece seçili grupta çalış
     if (activeGroupId && update.id !== activeGroupId) return;
     debugLog('handleGroupJoin: sending welcome to ' + update.id);
     const meta = await sock.groupMetadata(update.id);
     for (const p of update.participants) {
-      // participants hem string hem obje olabilir (Baileys versiyonuna göre)
       const participantId = typeof p === 'string' ? p : (p.id || p.phoneNumber || String(p));
-      
-      // Gerçek telefon numarasını bul: phoneNumber alanı varsa onu kullan (LID yerine)
       let mentionId = participantId;
       if (typeof p === 'object' && p.phoneNumber) {
-        mentionId = p.phoneNumber; // "905060685034@s.whatsapp.net" formatı
+        mentionId = p.phoneNumber;
       }
-      
-      // Görünen isim: metadata'dan bul, yoksa numara
       let name = mentionId.split('@')[0];
       try {
         const participant = meta.participants.find(x => x.id === participantId || x.id === mentionId);
         if (participant && participant.notify) name = participant.notify;
       } catch(e) {}
-      
       const welcomeMsg =
         `╔══════════════════════╗\n` +
         `║   👋 HOŞ GELDİN!   ║\n` +
@@ -244,11 +226,7 @@ async function handleGroupJoin(update) {
         `⚠️ Kurallara uymayan ilanlar silinir.\n\n` +
         `_İyi alışverişler!_ 🛒\n` +
         `🛡️ _${meta.subject} Yönetimi_`;
-
-      await sock.sendMessage(update.id, {
-        text: welcomeMsg,
-        mentions: [mentionId]
-      });
+      await sock.sendMessage(update.id, { text: welcomeMsg, mentions: [mentionId] });
       stats.welcomesSent++;
       io.emit('log', { type: 'welcome', user: name, group: meta.subject });
       debugLog('Welcome sent to: ' + name + ' in ' + meta.subject);
@@ -258,10 +236,8 @@ async function handleGroupJoin(update) {
   }
 }
 
-// Grup mesajı silme helper - participant alanını garanti et
 function getDeleteKey(msg) {
   const key = { ...msg.key };
-  // Grup mesajlarında participant zorunlu (yoksa "sadece benden sil" olur)
   if (key.remoteJid && key.remoteJid.endsWith('@g.us')) {
     if (!key.participant) {
       key.participant = msg.key.participant || msg.participant || msg.author || undefined;
@@ -270,7 +246,6 @@ function getDeleteKey(msg) {
   return key;
 }
 
-// Medya indirme helper
 async function downloadMediaMessage(msg) {
   try {
     if (!msg.message) return null;
@@ -288,33 +263,38 @@ async function downloadMediaMessage(msg) {
   return null;
 }
 
+// ─── MESAJ İŞLEME (modüler kurallar) ─────────────────────────────────────────
 async function handleMessage(msg) {
   try {
     if (msg.messageTimestamp && msg.messageTimestamp < botStartTime - 5) return;
     const chatId = msg.key.remoteJid;
     if (!chatId || !chatId.endsWith('@g.us')) return;
     if (pausedGroups.has(chatId)) return;
-    
     debugLog('handleMsg: chatId=' + chatId + ' activeGroupId=' + activeGroupId);
-    
     if (activeGroupId && chatId !== activeGroupId) return;
 
     const isFromMe = msg.key.fromMe;
 
-    // Mesajı cache'e ekle (clean-no-price için)
+    // Mesajı cache'e ekle
     if (!isFromMe) {
       if (!groupMessages[chatId]) groupMessages[chatId] = [];
       groupMessages[chatId].push(msg);
-      // En fazla 500 mesaj tut, eskiyi sil
       if (groupMessages[chatId].length > 500) groupMessages[chatId].shift();
     }
+
     let msgText = '';
     if (msg.message) {
-      msgText = msg.message.conversation || msg.message?.extendedTextMessage?.text || msg.message?.imageMessage?.caption || msg.message?.videoMessage?.caption || msg.message?.documentMessage?.caption || msg.message?.documentWithCaptionMessage?.message?.documentMessage?.caption || '';
+      msgText = msg.message.conversation || msg.message?.extendedTextMessage?.text ||
+        msg.message?.imageMessage?.caption || msg.message?.videoMessage?.caption ||
+        msg.message?.documentMessage?.caption ||
+        msg.message?.documentWithCaptionMessage?.message?.documentMessage?.caption || '';
     }
-    const hasMedia = !!(msg.message?.imageMessage || msg.message?.videoMessage || msg.message?.documentMessage || msg.message?.documentWithCaptionMessage || msg.message?.stickerMessage || msg.message?.audioMessage || msg.message?.viewOnceMessage || msg.message?.viewOnceMessageV2);
+    const hasMedia = !!(msg.message?.imageMessage || msg.message?.videoMessage ||
+      msg.message?.documentMessage || msg.message?.documentWithCaptionMessage ||
+      msg.message?.stickerMessage || msg.message?.audioMessage ||
+      msg.message?.viewOnceMessage || msg.message?.viewOnceMessageV2);
 
-    // Bot'un kendi mesajlarını atla
+    // Bot mesajlarını atla
     if (isFromMe && msgText && (msgText.includes('Grup Yönetimi') || msgText.includes('tespit edildi') || msgText.includes('susturulm') || msgText.includes('━━━'))) return;
     if (isFromMe && msgText && (msgText.includes('Bu ilan reklam') || msgText.includes('Reklam ücreti') || msgText.includes('Geri Yüklenen'))) return;
 
@@ -323,22 +303,18 @@ async function handleMessage(msg) {
     let groupName = chatId;
     let userName = msg.pushName || '';
     let userPhone = '';
-    let realUserId = userId; // Gerçek @s.whatsapp.net ID (LID yerine)
-    
+    let realUserId = userId;
+
     try {
       const meta = await sock.groupMetadata(chatId);
       groupName = meta.subject;
       const p = meta.participants.find(x => x.id === userId);
       if (p && (p.admin === 'admin' || p.admin === 'superadmin')) isAdmin = true;
-      
-      // LID formatı: gerçek telefon numarasını phoneNumber alanından al
       if (userId.includes('@lid')) {
         if (p && p.phoneNumber && p.phoneNumber.includes('@')) {
-          // "905060685034@s.whatsapp.net" → "905060685034"
           userPhone = p.phoneNumber.split('@')[0];
-          realUserId = p.phoneNumber; // DM göndermek için gerçek ID
+          realUserId = p.phoneNumber;
         } else {
-          // Fallback: pushName veya LID numarası
           userPhone = userName || userId.split('@')[0];
         }
       } else {
@@ -348,22 +324,21 @@ async function handleMessage(msg) {
     } catch(e) {
       userPhone = userId.split('@')[0];
     }
-    
     if (!userName) userName = userPhone;
 
-    // pushName'i kaydet (üyeler listesinde isim göstermek için)
+    // pushName kaydet
     if (msg.pushName && userId) {
       contactNames[userId] = msg.pushName;
       if (realUserId && realUserId !== userId) contactNames[realUserId] = msg.pushName;
     }
 
-    // Susturulan üye kontrolü
+    // Susturulan üye
     if (mutedUsers.has(userId)) {
       try { await sock.sendMessage(chatId, { delete: getDeleteKey(msg) }); } catch(e) {}
       return;
     }
 
-    // Admin reklam onayı: admin belirli kelimeleri yazarsa son fiyatsız mesajı muaf et
+    // Admin reklam onayı
     if (isAdmin && msgText) {
       const reklamKelimeleri = ['bu ilan reklam', 'reklam ücreti', 'ücretli reklam', 'sponsor', 'ücreti alınmıştır', 'ücretli ilan', 'onaylı ilan', 'onaylanarak yayınlanmıştır'];
       if (reklamKelimeleri.some(kw => msgText.toLowerCase().includes(kw))) {
@@ -376,188 +351,37 @@ async function handleMessage(msg) {
       }
     }
 
-    // Admin muafiyeti DEVRE DISI - test modu
-    // if (isAdmin) return;
-
     if (!config.automation.noPrice) return;
 
     const msgLower = msgText.toLowerCase();
+    const hasFiyat = hasFiyatMi(msgText);
 
-    // === FIYAT ALGILAMA ===
-    const hasFiyat = /\d+[\.,]?\d*\s*(tl|lira|₺|k\b|bin\b|m\b|milyon\b|milyar\b|son\b)/i.test(msgText) ||
-      /(fiyat|tane|adet)\s*:?\s*\d+[\.,]?\d*|\d+[\.,]?\d*\s*(fiyat|tane|adet)/i.test(msgText) ||
-      /\d{1,3}([.,]\d{3})+([.,]\d{2})?/.test(msgText) ||
-      ((/\d{4,9}/.test(msgText) || /\d{1,3}[\.,]\d{3}/.test(msgText)) && !/km/i.test(msgText) && !/model/i.test(msgText) && !/kilometre/i.test(msgText) && !/\d{4,}\s*da\b/i.test(msgText) && !/\d{4,}\s*de\b/i.test(msgText) && !/0?5\d{9}/.test(msgText));
-
-    // === TOPLU RESİM + 5DK KURAL ===
+    // ── KURAL: Toplu resim işleme ──
     if (hasMedia) {
-      if (!spamTracker[userId]) spamTracker[userId] = { count: 0, lastTime: 0, warned10: false, warned10Time: 0, hasPaid: false, paidTime: 0, ozelUyari: false, ozelUyariTime: 0, firstAdTime: 0, adCount: 0 };
-      const now = Date.now();
-      const ONE_HOUR = 60 * 60 * 1000;
-      const FIVE_MIN = 5 * 60 * 1000;
-      
-      // 1 saatte bir uyarı flag'lerini sıfırla
-      if (now - spamTracker[userId].warned10Time > ONE_HOUR) {
-        spamTracker[userId].warned10 = false;
-      }
-      if (now - spamTracker[userId].ozelUyariTime > ONE_HOUR) {
-        spamTracker[userId].ozelUyari = false;
-      }
-      
-      // 5 dakikadan fazla geçtiyse yeni dönem (sayaçlar sıfırlanır)
-      if (now - spamTracker[userId].firstAdTime > FIVE_MIN) {
-        spamTracker[userId].count = 0;
-        spamTracker[userId].hasPaid = false;
-        spamTracker[userId].adCount = 0;
-      }
-      
-      spamTracker[userId].count++;
-      spamTracker[userId].lastTime = now;
+      const ctx = { sock, chatId, realUserId, groupName, msg, userId, msgText, hasFiyat, spamTracker, stats, getDeleteKey, config };
 
-      // İlk ilan başlangıcı (isPartOfFirst'tan önce set et)
-      if (spamTracker[userId].adCount === 0) {
-        spamTracker[userId].adCount = 1;
-        spamTracker[userId].firstAdTime = now;
-      }
+      // 1. 5dk limit
+      const res5dk = await kural5dkLimit(ctx);
+      if (res5dk === 'deleted') return;
+      // res5dk === 'new_period' veya 'continue' → devam
 
-      // 5sn içinde gelenler aynı toplu ilan
-      const isPartOfFirst = (now - spamTracker[userId].firstAdTime < 5000);
+      // 2. 10 resim limiti (fiyatlı ilanlar)
+      const res10 = await kural10Limit({ ...ctx, spamTracker });
+      if (res10 === 'deleted') return;
+      if (res10 === 'paid_ok') return; // Fiyatlı, 10 veya altında → koru
 
-      // Fiyat varsa hasPaid işaretle
-      // isPartOfFirst=true: bu resim ilk toplu gönderimle aynı grupta (caption'da fiyat) → hasPaid=true
-      // isPartOfFirst=false: sonradan ayrı resim+fiyat geldi → yeni dönem başlat
-      if (hasFiyat) {
-        spamTracker[userId].hasPaid = true;
-        spamTracker[userId].paidTime = now;
-      }
-
-      // 2. ilan (5sn'den sonra, 5dk'dan önce gelen) → sil + DM 1 saatte 1 kere
-      if (!isPartOfFirst && (now - spamTracker[userId].firstAdTime < FIVE_MIN) && spamTracker[userId].adCount >= 1) {
-        if (hasFiyat) {
-          // Fiyatlı resim 5dk içinde ayrı mesajla geldi: yeni dönem başlat
-          // Önceki fiyatsız resimler timeout'ta silinecek (paidTime koruması kaldırıldı)
-          spamTracker[userId].adCount = 1;
-          spamTracker[userId].firstAdTime = now;
-          spamTracker[userId].count = 1;
-          // hasPaid/paidTime zaten yukarıda set edildi
-          // Bu fiyatlı resim aşağıdaki hasPaid bloğuna düşer, count=1 ≤ 10 → silinmez
-        } else {
-          spamTracker[userId].adCount++;
-          if (!spamTracker[userId].ozelUyari || (now - (spamTracker[userId].ozelUyariTime || 0) > ONE_HOUR)) {
-            spamTracker[userId].ozelUyari = true;
-            spamTracker[userId].ozelUyariTime = now;
-            try { await sock.sendMessage(realUserId, { text: `⚠️ 5 dakikada 1 ilan atabilirsiniz. Lütfen bekleyiniz.\n\n🛡️ _${groupName} Yönetimi_` }); } catch(e) {}
-          }
-          const delKey = getDeleteKey(msg);
-          const tryDel = async (a) => { try { await sock.sendMessage(chatId, { delete: delKey }); } catch(e) { if (a < 20) setTimeout(() => tryDel(a+1), 3000); } };
-          tryDel(1);
-          stats.messagesDeleted++;
-          return;
-        }
-      }
-
-      // Fiyatlı ilan → ilk 10 kalır, 11+ silinir
-      if (spamTracker[userId].hasPaid) {
-        if (spamTracker[userId].count > 10) {
-          if (!spamTracker[userId].warned10) {
-            spamTracker[userId].warned10 = true;
-            spamTracker[userId].warned10Time = now;
-            // Uyarıyı özele at (gruba değil), 1 saatte bir tekrar uyarır
-            try { await sock.sendMessage(realUserId, { text: `⚠️ Tek seferde 10 adetten fazla resim yükleyemezsiniz.\n\n🛡️ _${groupName} Yönetimi_` }); } catch(e) {}
-          }
-          const delKey = getDeleteKey(msg);
-          const tryDel = async (a) => { try { await sock.sendMessage(chatId, { delete: delKey }); } catch(e) { if (a < 20) setTimeout(() => tryDel(a+1), 3000); } };
-          tryDel(1);
-          stats.messagesDeleted++;
-        }
-        return;
-      }
-
-      // Fiyatsız resim → 10 limit + 30sn bekle
-      if (spamTracker[userId].count > 10) {
-        const delKey = getDeleteKey(msg);
-        const tryDel = async (a) => { try { await sock.sendMessage(chatId, { delete: delKey }); } catch(e) { if (a < 20) setTimeout(() => tryDel(a+1), 3000); } };
-        tryDel(1);
-        stats.messagesDeleted++;
-        return;
-      }
-
-      // Fiyatsız ilk 10 resim → 30sn bekle (fiyat geç gelebilir)
-      const delKey = getDeleteKey(msg);
-      const delUserId = userId;
-      const delMsgId = msg.key.id;
-      const delMsgTime = Date.now(); // Bu mesajın gönderilme zamanı
-      const delChatId = chatId;
-      const delText = msgText;
-      const delGroupName = groupName;
-      const delUserPhone = userPhone;
-      const delUserName = userName;
-      
-      // Resmi hemen indir (30sn sonra mesaj silinmiş olabilir)
-      let mediaInfo = null;
-      if (hasMedia) {
-        mediaInfo = await downloadMediaMessage(msg);
-      }
-      
-      setTimeout(() => {
-        // Fiyatsız resim → her zaman sil (fiyat caption'da gelseydi bu timeout'a girmezdi)
-        if (reklamMuafMsgIds.has(delMsgId)) { reklamMuafMsgIds.delete(delMsgId); return; }
-        const tryDel = async (a) => { try { await sock.sendMessage(delChatId, { delete: delKey }); } catch(e) { if (a < 20) setTimeout(() => tryDel(a+1), 3000); } };
-        tryDel(1);
-        stats.messagesDeleted++;
-        
-        // Toplu ilan loglama: aynı kullanıcıdan 60sn içinde gelen silinenleri birleştir
-        // userId veya telefon ile eşleştir (LID formatı için userId daha güvenli)
-        const existingLog = deletedAdsLog.find(l =>
-          l.grupId === delChatId &&
-          (Date.now() - new Date(l.timestamp).getTime() < 60000) &&
-          (l.telefon === delUserPhone || l.userId === delUserId || (delUserPhone && l.telefon && l.telefon === delUserPhone))
-        );
-        if (existingLog) {
-          existingLog.topluAdet = (existingLog.topluAdet || 1) + 1;
-          // Mesajı temiz tut, toplu adet sayısını gösterme
-          if (delText) existingLog.mesaj = delText.substring(0, 100);
-          // Tüm resimleri medyaListesi array'inde sakla
-          if (mediaInfo) {
-            if (!existingLog.medyaListesi) existingLog.medyaListesi = [];
-            existingLog.medyaListesi.push({ data: mediaInfo.data, mimetype: mediaInfo.mimetype, caption: delText || '' });
-          }
-          // Geriye dönük uyumluluk: ilk resmi medyaData'da tut
-          if (mediaInfo && !existingLog.medyaData) {
-            existingLog.medyaData = mediaInfo.data;
-            existingLog.medyaMimetype = mediaInfo.mimetype;
-          }
-        } else {
-          const yeniLog = {
-            id: Date.now().toString(),
-            tarih: new Date().toLocaleDateString('tr-TR'),
-            saat: new Date().toLocaleTimeString('tr-TR'),
-            timestamp: new Date().toISOString(),
-            kullanici: delUserName || delUserPhone,
-            telefon: delUserPhone,
-            userId: delUserId,
-            grupId: delChatId,
-            grup: delGroupName,
-            mesaj: delText || '(Resimli ilan)',
-            sebep: 'Fiyatsız ilan (otomatik)',
-            topluAdet: 1,
-            medyaData: mediaInfo ? mediaInfo.data : null,
-            medyaMimetype: mediaInfo ? mediaInfo.mimetype : null,
-            medyaListesi: mediaInfo ? [{ data: mediaInfo.data, mimetype: mediaInfo.mimetype, caption: delText || '' }] : []
-          };
-          deletedAdsLog.unshift(yeniLog);
-        }
-        if (deletedAdsLog.length > 500) deletedAdsLog = deletedAdsLog.slice(0, 500);
-        saveDeletedLog();
-        io.emit('log', { type: 'deleted', user: delUserName || delUserPhone, group: delGroupName });
-      }, 30000);
+      // 3. Fiyatsız resim → 30sn bekle
+      await kuralFiyatsizResim({
+        sock, chatId, msg, userId, userName, userPhone, groupName, msgText, spamTracker,
+        stats, reklamMuafMsgIds, deletedAdsLog, saveDeletedLog, io, getDeleteKey, downloadMediaMessage, config
+      });
       return;
     }
 
-    // === FIYAT VARSA (medyasız) → geç ===
+    // ── Fiyatlı metin → geç ──
     if (hasFiyat) return;
 
-    // === SORU / SOHBET FİLTRESİ ===
+    // ── Soru/sohbet filtresi ──
     const soruIfadeleri = ['?', ' mı', ' mi', ' mu', ' mü', 'hala ', 'halen ', 'satıldı', 'satildi', 'ne kadar', 'kaça', 'kaca', 'fiyat ne', 'fiyatı ne', 'almak istiyorum', 'arıyorum', 'ariyorum', 'alıcı', 'alici', 'bakıyorum', 'bakiyorum', 'ilgilenirim', 'var mı', 'varmı', 'ister misin', 'olur mu', 'nerede', 'nerden', 'tavsiye', 'öneri'];
     const sohbetIfadeleri = ['bende var', 'bende bi', 'verelim', 'vereyim', 'gondereyim', 'atayım', 'atıyorum'];
     if (!hasMedia) {
@@ -567,593 +391,395 @@ async function handleMessage(msg) {
       if (!ilanKeywords.some(kw => msgLower.includes(kw))) return;
     }
 
-    // === ÖZELDEN YAZ FİLTRESİ ===
+    // ── Özelden fiyat filtresi ──
     const ozeldenIfadeler = ['özelden yaz', 'özelden', 'dm', 'özel mesaj', 'özele gel', 'fiyat özelden', 'fiyat dm', 'fiyat özel', 'özelim'];
     if (ozeldenIfadeler.some(kw => msgLower.includes(kw)) && !hasMedia) {
       await sock.sendMessage(chatId, { text: `⚠️ Fiyatı grupta belirtin! Özelden fiyat vermek yasaktır.\n🛡️ _${groupName} Yönetimi_` });
       return;
     }
 
-    // === FIYATSIZ İLAN KESİNLEŞTİ ===
-
-    if (!noPriceCounter[userId]) noPriceCounter[userId] = { warned: false, warnedTime: 0 };
-    const quota = noPriceCounter[userId];
-    if (Date.now() - quota.warnedTime > 15 * 60 * 1000) quota.warned = false;
-
-    // 2. kez (15dk içinde): sessiz sil
-    if (quota.warned) {
-      const delKey2 = getDeleteKey(msg);
-      const tryDel2 = async (a) => { try { await sock.sendMessage(chatId, { delete: delKey2 }); } catch(e) { if (a < 20) setTimeout(() => tryDel2(a+1), 3000); } };
-      tryDel2(1);
-      stats.messagesDeleted++;
-      // Resmi indir
-      let mediaInfo2 = null;
-      if (hasMedia) { mediaInfo2 = await downloadMediaMessage(msg); }
-      deletedAdsLog.unshift({ id: Date.now().toString(), tarih: new Date().toLocaleDateString('tr-TR'), saat: new Date().toLocaleTimeString('tr-TR'), timestamp: new Date().toISOString(), kullanici: userName || userPhone, telefon: userPhone, grupId: chatId, grup: groupName, mesaj: msgText || '(ilan)', sebep: 'Fiyatsız ilan (sessiz)', topluAdet: 1, medyaData: mediaInfo2 ? mediaInfo2.data : null, medyaMimetype: mediaInfo2 ? mediaInfo2.mimetype : null });
-      if (deletedAdsLog.length > 500) deletedAdsLog = deletedAdsLog.slice(0, 500);
-      saveDeletedLog();
-      io.emit('log', { type: 'deleted', user: userName || userPhone, group: groupName });
-      return;
-    }
-
-    // 1. kez: DM'ye uyar + 1dk sonra sil
-    quota.warned = true;
-    quota.warnedTime = Date.now();
-    try { await sock.sendMessage(realUserId, { text: `⚠️ İlanınıza fiyat girmediniz. 1 dakika içerisinde silinecektir.\nLütfen fiyat girerek tekrar gönderiniz.\n\n🛡️ _${groupName} Yönetimi_` }); } catch(e) {}
-
-    // Resmi hemen indir
-    let mediaInfo3 = null;
-    if (hasMedia) { mediaInfo3 = await downloadMediaMessage(msg); }
-
-    const msgKey = getDeleteKey(msg);
-    const delUserId2 = userId;
-    const delText2 = msgText;
-    const delGroupName2 = groupName;
-    const delChatId2 = chatId;
-    const delUserPhone2 = userPhone;
-    const delUserName2 = userName;
-    const delMediaInfo3 = mediaInfo3;
-    setTimeout(async () => {
-      const tryDel3 = async (a) => { try { await sock.sendMessage(delChatId2, { delete: msgKey }); } catch(e) { if (a < 20) setTimeout(() => tryDel3(a+1), 3000); } };
-      tryDel3(1);
-      stats.messagesDeleted++;
-      deletedAdsLog.unshift({ id: Date.now().toString(), tarih: new Date().toLocaleDateString('tr-TR'), saat: new Date().toLocaleTimeString('tr-TR'), timestamp: new Date().toISOString(), kullanici: delUserName2 || delUserPhone2, telefon: delUserPhone2, grupId: delChatId2, grup: delGroupName2, mesaj: delText2 || '(ilan)', sebep: 'Fiyatsız ilan (otomatik)', topluAdet: 1, medyaData: delMediaInfo3 ? delMediaInfo3.data : null, medyaMimetype: delMediaInfo3 ? delMediaInfo3.mimetype : null });
-      if (deletedAdsLog.length > 500) deletedAdsLog = deletedAdsLog.slice(0, 500);
-      saveDeletedLog();
-      io.emit('log', { type: 'deleted', user: delUserName2 || delUserPhone2, group: delGroupName2 });
-    }, config.deleteDelay);
+    // ── KURAL: Fiyatsız metin ilanı ──
+    await kuralFiyatsizMetin({
+      sock, chatId, realUserId, groupName, msg, userId, userName, userPhone, msgText, hasMedia,
+      noPriceCounter, deletedAdsLog, saveDeletedLog, io, stats, getDeleteKey, downloadMediaMessage,
+      reklamMuafMsgIds, config
+    });
 
   } catch(e) { debugLog('handleMessage error: ' + e.message); }
 }
 
-// Static dosyalar
-app.use(express.static(path.join(__dirname, 'public')));
-
-// Ana sayfa - Web Panel
-app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
-});
-
-// API
-app.get('/api/status', (req, res) => {
-  res.json({ connected: isReady, groups: connectedGroups, stats, config: config.automation, qr: currentQR, pairingCode: currentPairingCode });
-});
-
-app.post('/api/connect', (req, res) => {
-  const { phoneNumber } = req.body;
-  console.log('Connect request received, phone:', phoneNumber);
-  connect(phoneNumber);
-  res.json({ success: true, message: 'Bağlantı başlatıldı, pairing code bekleniyor...' });
-});
-
-// Debug endpoint
-let debugLogs = [];
-function debugLog(msg) { console.log(msg); debugLogs.push({ time: new Date().toISOString(), msg }); if (debugLogs.length > 50) debugLogs.shift(); }
-app.get('/api/debug', (req, res) => { res.json(debugLogs); });
-
-app.get('/api/qr', async (req, res) => {
-  if (isReady) return res.json({ connected: true });
-  if (currentQR) {
-    const qrImage = await QRCode.toDataURL(currentQR);
-    return res.json({ connected: false, qr: qrImage });
-  }
-  res.json({ connected: false, qr: null });
-});
-
-app.post('/api/send-rules', async (req, res) => {
-  const { groupId } = req.body;
-  if (!sock || !isReady) return res.status(500).json({ error: 'Not connected' });
-  try {
-    const meta = await sock.groupMetadata(groupId);
-    // Özel kural metni varsa onu kullan, yoksa varsayılan
-    const ruleText = config.customRuleMessage
-      ? config.customRuleMessage
-      : `📋 *Grup Kuralları*\n\n• İlanlarınızda mutlaka fiyat belirtin\n• Aynı ilanı tekrar tekrar atmayın\n• Saygılı olalım\n\n⚠️ Kurallara uymayan ilanlar silinecektir.`;
-    const formatted = `📋 *${meta.subject} | Kurallar!*\n━━━━━━━━━━━━━━━━\n\n${ruleText}\n\n🛡️ _${meta.subject} Yönetimi_`;
-    await sock.sendMessage(groupId, { text: formatted });
-    res.json({ success: true });
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-app.post('/api/send-message', async (req, res) => {
-  const { groupId, message } = req.body;
-  if (!sock || !isReady) return res.status(500).json({ error: 'Not connected' });
-  try {
-    const formatted = `━━━━━━━━━━━━━━━━\n\n${message}\n\n━━━━━━━━━━━━━━━━`;
-    const sent = await sock.sendMessage(groupId, { text: formatted });
-    res.json({ success: true, messageId: sent?.key?.id });
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-app.post('/api/send-announcement', async (req, res) => {
-  const { groupId, message } = req.body;
-  if (!sock || !isReady) return res.status(500).json({ error: 'Not connected' });
-  try {
-    const meta = await sock.groupMetadata(groupId);
-    const formatted = `📢 *DUYURU*\n━━━━━━━━━━━━━━━━\n\n${message}\n\n🛡️ _${meta.subject} Yönetimi_`;
-    const sent = await sock.sendMessage(groupId, { text: formatted });
-    // Son gönderilen mesajın key'ini sakla (pin endpoint'i kullanabilsin)
-    if (sent && sent.key) {
-      lastSentKeys = lastSentKeys || {};
-      lastSentKeys[groupId] = sent.key;
-    }
-    res.json({ success: true, messageId: sent?.key?.id });
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-app.post('/api/set-group-description', async (req, res) => {
-  const { groupId, description } = req.body;
-  if (!sock || !isReady) return res.status(500).json({ error: 'Not connected' });
-  try {
-    await sock.groupUpdateDescription(groupId, description);
-    res.json({ success: true });
-  } catch(e) {
-    res.status(500).json({ error: 'Açıklama güncellenemedi: ' + e.message });
-  }
-});
-
-app.post('/api/set-active-group', (req, res) => {
-  activeGroupId = req.body.groupId || null;
-  // Dosyaya kaydet (restart'ta kaybolmasın)
-  try { fs.writeFileSync('./active-group.txt', activeGroupId || '', 'utf8'); } catch(e) {}
-  res.json({ success: true });
-});
-
-// Tüm fiyatsız ilanları sil (son 24 saat)
-app.post('/api/clean-no-price', async (req, res) => {
-  const { groupId } = req.body;
-  if (!sock || !isReady) return res.status(500).json({ error: 'Not connected' });
-  try {
-    let deletedCount = 0;
-    const twentyFourHoursAgo = Math.floor(Date.now() / 1000) - (24 * 3600);
-    
-    // Grup mesaj cache'inden al
-    const messages = groupMessages[groupId] || [];
-    if (!messages.length) {
-      return res.json({ success: true, count: 0, message: 'Henüz mesaj cache\'i yok. Bot açık olduğu süre içinde gelen mesajlar taranır.' });
-    }
-    
-    const fiyatRegex = /\d+[\.,]?\d*\s*(tl|lira|₺|k\b|bin\b|m\b|milyon\b|milyar\b|son\b)/i;
-    const fiyatKelime = /(fiyat|tane|adet)\s*:?\s*\d+[\.,]?\d*|\d+[\.,]?\d*\s*(fiyat|tane|adet)/i;
-    const fiyatBuyuk = /\d{4,9}/;
-    const fiyatNoktali = /\d{1,3}[\.,]\d{3}/;
-    const kmExclude = /km|model|kilometre/i;
-    const phoneExclude = /0?5\d{9}/;
-    
-    // Toplu silinen ilanları kullanıcıya göre grupla (tek log olarak kaydet)
-    const topluLog = {}; // { userId: { count, mesajlar, ilkMesaj, ... } }
-    
-    for (const msg of messages) {
-      if (!msg.key || msg.key.fromMe) continue;
-      if (msg.messageTimestamp && msg.messageTimestamp < twentyFourHoursAgo) continue;
-      
-      // Admin kontrol
-      const userId = msg.key.participant || msg.key.remoteJid;
-      try {
-        const meta = await sock.groupMetadata(groupId);
-        const p = meta.participants.find(x => x.id === userId);
-        if (p && (p.admin === 'admin' || p.admin === 'superadmin')) continue;
-      } catch(e) {}
-      
-      // Reklam muaf kontrolü
-      if (reklamMuafMsgIds.has(msg.key.id)) continue;
-      
-      const text = msg.message?.conversation || msg.message?.extendedTextMessage?.text || msg.message?.imageMessage?.caption || msg.message?.videoMessage?.caption || '';
-      const hasMedia = !!(msg.message?.imageMessage || msg.message?.videoMessage);
-      
-      const hasFiyat = fiyatRegex.test(text) || fiyatKelime.test(text) || 
-        ((fiyatBuyuk.test(text) || fiyatNoktali.test(text)) && !kmExclude.test(text) && !phoneExclude.test(text));
-      
-      if (hasFiyat) continue;
-      
-      // Resimli + fiyatsız VEYA yazılı ilan
-      let shouldDelete = false;
-      if (hasMedia) {
-        shouldDelete = true;
-      } else if (text.length > 15) {
-        const ilanKeywords = ['satılık', 'satilik', 'satlık', 'satlik', 'satıyorum', 'satiyorum', 'acil', 'acilen', 'temiz', 'sorunsuz', 'sahibinden', 'takas', 'devren', 'kiralık', 'kiralik'];
-        shouldDelete = ilanKeywords.some(kw => text.toLowerCase().includes(kw));
-      }
-      
-      if (shouldDelete) {
-        try { 
-          await sock.sendMessage(groupId, { delete: getDeleteKey(msg) }); 
-          deletedCount++;
-          
-          // Toplu log: aynı kullanıcının ilanlarını grupla
-          const telefon = userId.split('@')[0];
-          if (!topluLog[userId]) {
-            topluLog[userId] = { count: 0, telefon, ilkMesaj: text || '(Resimli ilan)', mesajlar: [] };
-          }
-          topluLog[userId].count++;
-          if (topluLog[userId].mesajlar.length < 3) {
-            topluLog[userId].mesajlar.push(text || '📷 Resimli');
-          }
-        } catch(e) {}
-        
-        // Rate limit
-        if (deletedCount % 5 === 0) await new Promise(r => setTimeout(r, 1000));
-      }
-    }
-    
-    // Toplu logları kaydet (kullanıcı başına 1 log)
-    let groupName = groupId;
-    try { const meta = await sock.groupMetadata(groupId); groupName = meta.subject; } catch(e) {}
-    
-    for (const [uid, data] of Object.entries(topluLog)) {
-      deletedAdsLog.unshift({ 
-        id: Date.now().toString() + uid.substring(0, 5), 
-        tarih: new Date().toLocaleDateString('tr-TR'), 
-        saat: new Date().toLocaleTimeString('tr-TR'), 
-        timestamp: new Date().toISOString(), 
-        kullanici: data.telefon, 
-        telefon: data.telefon,
-        grupId: groupId, 
-        grup: groupName, 
-        mesaj: data.count > 1 ? `[${data.count} ilan] ${data.mesajlar.join(' | ')}` : data.ilkMesaj,
-        sebep: 'Toplu tarama (Fiyatsız)',
-        topluAdet: data.count
-      });
-    }
-    
-    // Max 500 log tut
-    if (deletedAdsLog.length > 500) deletedAdsLog = deletedAdsLog.slice(0, 500);
-    
-    stats.messagesDeleted += deletedCount;
-    saveDeletedLog();
-    res.json({ success: true, count: deletedCount });
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-app.post('/api/automation', (req, res) => {
-  const { type, enabled } = req.body;
-  if (config.automation.hasOwnProperty(type)) { config.automation[type] = enabled; saveConfig(); }
-  res.json({ success: true });
-});
-
-app.post('/api/mute-member', (req, res) => {
-  const id = req.body.memberId;
-  if (mutedUsers.has(id)) {
-    mutedUsers.delete(id);
-    res.json({ success: true, muted: false });
-  } else {
-    mutedUsers.add(id);
-    res.json({ success: true, muted: true });
-  }
-});
-
-app.post('/api/unmute-member', (req, res) => {
-  mutedUsers.delete(req.body.memberId);
-  res.json({ success: true, muted: false });
-});
-
-app.post('/api/remove-member', async (req, res) => {
-  if (!sock || !isReady) return res.status(500).json({ error: 'Not connected' });
-  try {
-    await sock.groupParticipantsUpdate(req.body.groupId, [req.body.memberId], 'remove');
-    res.json({ success: true });
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-app.post('/api/close-group', async (req, res) => {
-  if (!sock || !isReady) return res.status(500).json({ error: 'Not connected' });
-  try {
-    await sock.groupSettingUpdate(req.body.groupId, 'announcement');
-    res.json({ success: true });
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-app.post('/api/open-group', async (req, res) => {
-  if (!sock || !isReady) return res.status(500).json({ error: 'Not connected' });
-  try {
-    await sock.groupSettingUpdate(req.body.groupId, 'not_announcement');
-    res.json({ success: true });
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-app.get('/api/members', async (req, res) => {
-  if (!sock || !isReady) return res.status(500).json({ error: 'Not connected' });
-  try {
-    const meta = await sock.groupMetadata(req.query.groupId);
-    const members = meta.participants.map(p => {
-      // LID formatı: gerçek numarayı phoneNumber alanından al
-      let number = '';
-      let realId = p.id;
-      if (p.id && p.id.includes('@lid')) {
-        if (p.phoneNumber && p.phoneNumber.includes('@')) {
-          number = p.phoneNumber.split('@')[0];
-          realId = p.phoneNumber; // Ban/remove işlemleri için gerçek ID
-        } else {
-          number = p.id.split('@')[0]; // Fallback
-        }
-      } else {
-        number = p.id.split('@')[0];
-      }
-      // İsim: contactNames map'inden (mesaj gelince kaydedilir), sonra Baileys alanları
-      const contactId = realId || p.id;
-      const savedName = contactNames[contactId] || contactNames[p.id] || '';
-      const displayName = savedName || p.name || p.notify || p.verifiedName || '';
-      return {
-        id: p.id,        // Baileys işlemleri için (LID)
-        realId: realId,  // DM/remove için gerçek ID
-        number: number,  // Görünen numara
-        name: displayName || number, // İsim yoksa numara göster
-        isAdmin: p.admin === 'admin' || p.admin === 'superadmin'
-      };
-    });
-    res.json({ members });
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-app.post('/api/pause-group', (req, res) => {
-  const gid = req.body.groupId;
-  if (pausedGroups.has(gid)) {
-    pausedGroups.delete(gid);
-    res.json({ success: true, paused: false });
-  } else {
-    pausedGroups.add(gid);
-    res.json({ success: true, paused: true });
-  }
-});
-
-app.post('/api/ban-member', async (req, res) => {
-  if (!sock || !isReady) return res.status(500).json({ error: 'Not connected' });
-  try {
-    await sock.groupParticipantsUpdate(req.body.groupId, [req.body.memberId], 'remove');
-    res.json({ success: true });
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-app.get('/api/deleted-ads', (req, res) => {
-  const { kullanici } = req.query;
-  let results = [...deletedAdsLog];
-  if (kullanici) {
-    const q = kullanici.toLowerCase();
-    results = results.filter(r => 
-      (r.kullanici && r.kullanici.toLowerCase().includes(q)) ||
-      (r.telefon && r.telefon.includes(q)) ||
-      (r.mesaj && r.mesaj.toLowerCase().includes(q))
-    );
-  }
-  // medyaData'yi response'dan cikar (cok buyuk olabilir)
-  const lightResults = results.map(r => {
-    // Telefon numarasını bul: telefon alanı > kullaniciId'den çıkar > kullanici alanı (numara ise)
-    let tel = r.telefon || '';
-    if (!tel && r.kullaniciId && r.kullaniciId.includes('@')) {
-      tel = r.kullaniciId.split('@')[0];
-    }
-    if (!tel && r.kullanici && /^\d{10,}$/.test(r.kullanici)) {
-      tel = r.kullanici;
-    }
-    return {
-      ...r,
-      medyaData: undefined,
-      medyaVar: !!(r.medyaData),
-      telefon: tel
-    };
-  });
-  res.json({ success: true, count: lightResults.length, data: lightResults });
-});
-
-// Tek log sil
-app.delete('/api/deleted-ads/:id', (req, res) => {
-  deletedAdsLog = deletedAdsLog.filter(e => e.id !== req.params.id);
-  saveDeletedLog();
-  res.json({ success: true });
-});
-
-// Toplu resim gönderme helper - medyaListesi varsa tüm resimleri gönderir
-async function sendMediaList(groupId, entry, extraCaption) {
-  const liste = entry.medyaListesi && entry.medyaListesi.length > 0 ? entry.medyaListesi : null;
-  
-  if (liste && liste.length > 0) {
-    // Tüm resimleri sırayla gönder
-    for (let i = 0; i < liste.length; i++) {
-      const m = liste[i];
-      const buffer = Buffer.from(m.data, 'base64');
-      const isVideo = m.mimetype && m.mimetype.startsWith('video');
-      // Sadece ilk resme caption ekle
-      const caption = i === 0 ? (extraCaption || m.caption || undefined) : undefined;
-      try {
-        if (isVideo) {
-          await sock.sendMessage(groupId, { video: buffer, mimetype: m.mimetype, caption });
-        } else {
-          await sock.sendMessage(groupId, { image: buffer, mimetype: m.mimetype, caption });
-        }
-        // WhatsApp rate limit: resimler arası kısa bekleme
-        if (i < liste.length - 1) await new Promise(r => setTimeout(r, 800));
-      } catch(e) { debugLog('sendMediaList resim ' + i + ' hata: ' + e.message); }
-    }
-    return true;
-  } else if (entry.medyaData && entry.medyaMimetype) {
-    // Eski format: tek resim
-    const buffer = Buffer.from(entry.medyaData, 'base64');
-    const isVideo = entry.medyaMimetype.startsWith('video');
-    const caption = extraCaption || (entry.mesaj || '').replace(/^\[\d+ resimli ilan\]\s*/, '').replace(/\(Resimli ilan\)/, '').replace(/\(ilan\)/, '').trim() || undefined;
-    if (isVideo) {
-      await sock.sendMessage(groupId, { video: buffer, mimetype: entry.medyaMimetype, caption });
-    } else {
-      await sock.sendMessage(groupId, { image: buffer, mimetype: entry.medyaMimetype, caption });
-    }
-    return true;
-  }
-  return false;
+// ─── RULE INTERVAL ────────────────────────────────────────────────────────────
+let ruleTimer = null;
+function scheduleRuleReminder() {
+  if (ruleTimer) clearInterval(ruleTimer);
+  const ms = (config.ruleIntervalHours || 6) * 60 * 60 * 1000;
+  ruleTimer = setInterval(async () => {
+    if (!isReady || !activeGroupId || !config.automation.rules) return;
+    try {
+      const msg = config.customRuleMessage ||
+        `📋 *GRUP KURALLARI*\n\n` +
+        `• İlanlarınıza mutlaka fiyat yazınız\n` +
+        `• ${config.adIntervalMin || 5} dakikada 1 ilan atabilirsiniz\n` +
+        `• Tek seferde en fazla 10 resim\n` +
+        `• Konu dışı mesaj atmayınız\n\n` +
+        `⚠️ Kurallara uymayan ilanlar otomatik silinir.\n🛡️ _Grup Yönetimi_`;
+      await sock.sendMessage(activeGroupId, { text: msg });
+      stats.rulesReminded++;
+      io.emit('log', { type: 'rules', group: activeGroupId });
+    } catch(e) {}
+  }, ms);
 }
 
-app.post('/api/restore-ad', async (req, res) => {
-  const { id } = req.body;
-  const entry = deletedAdsLog.find(e => e.id === id);
-  if (!entry) return res.status(404).json({ success: false, error: 'Log bulunamadı' });
-  if (sock && isReady) {
-    try {
-      const groupId = entry.grupId || entry.groupId;
-      const hasSentMedia = await sendMediaList(groupId, entry, null);
-      
-      if (!hasSentMedia) {
-        // Sadece metin
-        const topluBilgi = entry.topluAdet && entry.topluAdet > 1 ? `\n\n📦 _Bu ilan ${entry.topluAdet} resimden oluşuyordu_` : '';
-        const mesaj = (entry.mesaj || '(ilan)').replace(/^\[\d+ resimli ilan\]\s*/, '').replace(/^\[\d+ ilan\]\s*/, '');
-        await sock.sendMessage(groupId, { text: `🔄 *Geri Yüklenen İlan*\n\n${mesaj}${topluBilgi}\n\n👤 ${entry.kullanici || 'Bilinmeyen'}` });
-      }
-    } catch(e) { debugLog('restore-ad error: ' + e.message); }
+// ─── EXPRESS STATIC ───────────────────────────────────────────────────────────
+app.use(express.static(path.join(__dirname, 'public')));
+
+// ─── API: STATUS ──────────────────────────────────────────────────────────────
+app.get('/api/status', (req, res) => {
+  res.json({
+    connected: isReady,
+    groups: connectedGroups,
+    activeGroupId,
+    stats,
+    config,
+    pairedPhone: isReady && sock?.authState?.creds?.me?.id ? sock.authState.creds.me.id.split(':')[0] : null
+  });
+});
+
+// ─── API: CONNECT ─────────────────────────────────────────────────────────────
+app.post('/api/connect', async (req, res) => {
+  const { phoneNumber } = req.body;
+  try {
+    await connect(phoneNumber);
+    res.json({ success: true });
+  } catch(e) {
+    res.json({ success: false, error: e.message });
   }
-  deletedAdsLog = deletedAdsLog.filter(e => e.id !== id);
+});
+
+// ─── API: DEBUG LOG ───────────────────────────────────────────────────────────
+app.get('/api/debug-log', (req, res) => {
+  try {
+    const LOG_PATH = process.env.DATA_DIR ? path.join(process.env.DATA_DIR, 'debug.log') : './debug.log';
+    if (fs.existsSync(LOG_PATH)) {
+      const content = fs.readFileSync(LOG_PATH, 'utf8');
+      const lines = content.split('\n').filter(Boolean);
+      res.json({ lines: lines.slice(-200) });
+    } else {
+      res.json({ lines: [] });
+    }
+  } catch(e) { res.json({ lines: [] }); }
+});
+
+app.delete('/api/debug-log', (req, res) => {
+  try {
+    const LOG_PATH = process.env.DATA_DIR ? path.join(process.env.DATA_DIR, 'debug.log') : './debug.log';
+    fs.writeFileSync(LOG_PATH, '', 'utf8');
+    res.json({ success: true });
+  } catch(e) { res.json({ success: false }); }
+});
+
+// ─── API: QR ──────────────────────────────────────────────────────────────────
+app.get('/api/qr', async (req, res) => {
+  if (!currentQR) return res.json({ qr: null, pairingCode: currentPairingCode || null });
+  try {
+    const qrDataUrl = await QRCode.toDataURL(currentQR);
+    res.json({ qr: qrDataUrl, pairingCode: currentPairingCode || null });
+  } catch(e) { res.json({ qr: null, pairingCode: null }); }
+});
+
+// ─── API: SET ACTIVE GROUP ────────────────────────────────────────────────────
+app.post('/api/set-active-group', (req, res) => {
+  const { groupId } = req.body;
+  activeGroupId = groupId || null;
+  try { fs.writeFileSync(ACTIVE_GROUP_FILE, activeGroupId || '', 'utf8'); } catch(e) {}
+  io.emit('active_group', activeGroupId);
+  res.json({ success: true, activeGroupId });
+});
+
+// ─── API: SEND RULES ──────────────────────────────────────────────────────────
+app.post('/api/send-rules', async (req, res) => {
+  if (!isReady || !activeGroupId) return res.json({ success: false, error: 'Bağlı değil veya grup seçili değil' });
+  try {
+    const msg = config.customRuleMessage ||
+      `📋 *GRUP KURALLARI*\n\n` +
+      `• İlanlarınıza mutlaka fiyat yazınız\n` +
+      `• ${config.adIntervalMin || 5} dakikada 1 ilan atabilirsiniz\n` +
+      `• Tek seferde en fazla 10 resim\n` +
+      `• Konu dışı mesaj atmayınız\n\n` +
+      `⚠️ Kurallara uymayan ilanlar otomatik silinir.\n🛡️ _Grup Yönetimi_`;
+    await sock.sendMessage(activeGroupId, { text: msg });
+    stats.rulesReminded++;
+    io.emit('log', { type: 'rules', group: activeGroupId });
+    res.json({ success: true });
+  } catch(e) { res.json({ success: false, error: e.message }); }
+});
+
+// ─── API: SEND MESSAGE ────────────────────────────────────────────────────────
+app.post('/api/send-message', async (req, res) => {
+  const { groupId, message } = req.body;
+  if (!isReady) return res.json({ success: false, error: 'Bağlı değil' });
+  try {
+    const target = groupId || activeGroupId;
+    if (!target) return res.json({ success: false, error: 'Hedef grup yok' });
+    await sock.sendMessage(target, { text: message });
+    res.json({ success: true });
+  } catch(e) { res.json({ success: false, error: e.message }); }
+});
+
+// ─── API: SEND ANNOUNCEMENT ──────────────────────────────────────────────────
+app.post('/api/send-announcement', async (req, res) => {
+  const { message, groupIds } = req.body;
+  if (!isReady) return res.json({ success: false, error: 'Bağlı değil' });
+  try {
+    const targets = groupIds && groupIds.length > 0 ? groupIds : (activeGroupId ? [activeGroupId] : []);
+    if (targets.length === 0) return res.json({ success: false, error: 'Hedef grup yok' });
+    for (const gid of targets) {
+      await sock.sendMessage(gid, { text: message });
+      await new Promise(r => setTimeout(r, 500));
+    }
+    res.json({ success: true, sent: targets.length });
+  } catch(e) { res.json({ success: false, error: e.message }); }
+});
+
+// ─── API: CLEAN NO PRICE ─────────────────────────────────────────────────────
+app.post('/api/clean-no-price', async (req, res) => {
+  if (!isReady || !activeGroupId) return res.json({ success: false });
+  const msgs = groupMessages[activeGroupId] || [];
+  let deleted = 0;
+  for (const m of msgs) {
+    try {
+      let text = m.message?.conversation || m.message?.extendedTextMessage?.text ||
+        m.message?.imageMessage?.caption || m.message?.videoMessage?.caption || '';
+      if (!hasFiyatMi(text)) {
+        await sock.sendMessage(activeGroupId, { delete: getDeleteKey(m) });
+        deleted++;
+        stats.messagesDeleted++;
+        await new Promise(r => setTimeout(r, 200));
+      }
+    } catch(e) {}
+  }
+  groupMessages[activeGroupId] = [];
+  res.json({ success: true, deleted });
+});
+
+// ─── API: AUTOMATION ──────────────────────────────────────────────────────────
+app.post('/api/automation', (req, res) => {
+  const { type, value } = req.body;
+  if (type && config.automation.hasOwnProperty(type)) {
+    config.automation[type] = value;
+    saveConfig();
+    io.emit('config', config);
+    res.json({ success: true, config });
+  } else {
+    res.json({ success: false, error: 'Geçersiz tür' });
+  }
+});
+
+// ─── API: MUTE MEMBER ─────────────────────────────────────────────────────────
+app.post('/api/mute-member', (req, res) => {
+  const { userId, action } = req.body;
+  if (action === 'mute') {
+    mutedUsers.add(userId);
+  } else {
+    mutedUsers.delete(userId);
+  }
+  res.json({ success: true, mutedUsers: [...mutedUsers] });
+});
+
+// ─── API: DELETED ADS ─────────────────────────────────────────────────────────
+app.get('/api/deleted-ads', (req, res) => {
+  res.json({ data: deletedAdsLog, total: deletedAdsLog.length });
+});
+
+// Tekil log silme
+app.delete('/api/deleted-ads/:id', (req, res) => {
+  const id = req.params.id;
+  const before = deletedAdsLog.length;
+  deletedAdsLog = deletedAdsLog.filter(a => a.id !== id);
+  if (deletedAdsLog.length !== before) saveDeletedLog();
+  res.json({ success: true });
+});
+
+// Tümünü sil
+app.delete('/api/deleted-ads', (req, res) => {
+  deletedAdsLog = [];
   saveDeletedLog();
   res.json({ success: true });
 });
 
-app.post('/api/restore-as-ad', async (req, res) => {
-  const { id } = req.body;
-  const entry = deletedAdsLog.find(e => e.id === id);
-  if (!entry) return res.status(404).json({ success: false, error: 'Log bulunamadı' });
-  if (sock && isReady) {
-    try {
-      const groupId = entry.grupId || entry.groupId;
-      let meta;
-      try { meta = await sock.groupMetadata(groupId); } catch(e) { meta = { subject: 'Grup' }; }
-      
-      const hasSentMedia = await sendMediaList(groupId, entry, null);
-      
-      if (!hasSentMedia && entry.mesaj) {
-        const temizMesaj = (entry.mesaj || '').replace(/^\[\d+ resimli ilan\]\s*/, '').replace(/\(Resimli ilan\)/, '').replace(/\(ilan\)/, '').trim();
-        if (temizMesaj) await sock.sendMessage(groupId, { text: temizMesaj });
-      }
-      
-      // Reklam onay yazısı
-      const topluBilgi = entry.topluAdet && entry.topluAdet > 1 ? ` (${entry.topluAdet} resimli)` : '';
-      await sock.sendMessage(groupId, { text: `Bu ilan reklam / hizmet paylaşımıdır${topluBilgi}\nReklam ücreti alınmış, onaylanarak yayınlanmıştır.\nİlgilenenler iletişime geçebilir\n\n${(meta.subject || 'GRUP').toUpperCase()} YÖNETİM` });
-    } catch(e) { debugLog('restore-as-ad error: ' + e.message); }
-  }
-  deletedAdsLog = deletedAdsLog.filter(e => e.id !== id);
-  saveDeletedLog();
-  res.json({ success: true });
-});
-
+// clear-all-logs alias
 app.post('/api/clear-all-logs', (req, res) => {
   deletedAdsLog = [];
   saveDeletedLog();
   res.json({ success: true });
 });
 
-app.post('/api/clear-media-cache', (req, res) => {
-  let cleared = 0;
-  deletedAdsLog.forEach(e => { if (e.medyaData) { e.medyaData = null; cleared++; } });
-  saveDeletedLog();
-  res.json({ success: true, cleared });
+// ─── API: RESTORE AD ─────────────────────────────────────────────────────────
+app.post('/api/restore-ad', async (req, res) => {
+  const { adId, groupId } = req.body;
+  if (!isReady) return res.json({ success: false, error: 'Bağlı değil' });
+  const ad = deletedAdsLog.find(a => a.id === adId);
+  if (!ad) return res.json({ success: false, error: 'İlan bulunamadı' });
+  try {
+    const target = groupId || activeGroupId;
+    if (!target) return res.json({ success: false, error: 'Hedef grup yok' });
+    if (ad.medyaListesi && ad.medyaListesi.length > 1) {
+      for (const m of ad.medyaListesi) {
+        const buf = Buffer.from(m.data, 'base64');
+        await sock.sendMessage(target, { image: buf, caption: m.caption || ad.mesaj || '' });
+        await new Promise(r => setTimeout(r, 300));
+      }
+    } else if (ad.medyaData) {
+      const buf = Buffer.from(ad.medyaData, 'base64');
+      const isVideo = ad.medyaMimetype && ad.medyaMimetype.startsWith('video');
+      if (isVideo) {
+        await sock.sendMessage(target, { video: buf, caption: ad.mesaj || '' });
+      } else {
+        await sock.sendMessage(target, { image: buf, caption: ad.mesaj || '' });
+      }
+    } else if (ad.mesaj) {
+      await sock.sendMessage(target, { text: ad.mesaj });
+    } else {
+      return res.json({ success: false, error: 'Geri yüklenecek içerik yok' });
+    }
+    const msgId = ad.userId ? ad.userId.split('@')[0] : 'unknown';
+    const notifyText = `✅ *Geri Yüklenen İlan*\n📱 Kullanıcı: ${ad.kullanici || ad.telefon}\n📅 Tarih: ${ad.tarih} ${ad.saat}\n🏠 Grup: ${ad.grup}`;
+    await sock.sendMessage(target, { text: notifyText });
+    res.json({ success: true });
+  } catch(e) { res.json({ success: false, error: e.message }); }
 });
 
+// ─── API: RESTORE AS AD ──────────────────────────────────────────────────────
+app.post('/api/restore-as-ad', async (req, res) => {
+  const { adId, groupId } = req.body;
+  if (!isReady) return res.json({ success: false, error: 'Bağlı değil' });
+  const ad = deletedAdsLog.find(a => a.id === adId);
+  if (!ad) return res.json({ success: false, error: 'İlan bulunamadı' });
+  try {
+    const target = groupId || activeGroupId;
+    if (!target) return res.json({ success: false, error: 'Hedef grup yok' });
+    const adText = `📢 *Reklam İlan*\n\n${ad.mesaj || ''}\n\n📱 Kişi: ${ad.kullanici || ad.telefon}\n🛡️ _Grup Yönetimi_`;
+    if (ad.medyaListesi && ad.medyaListesi.length > 0) {
+      const m = ad.medyaListesi[0];
+      const buf = Buffer.from(m.data, 'base64');
+      await sock.sendMessage(target, { image: buf, caption: adText });
+    } else if (ad.medyaData) {
+      const buf = Buffer.from(ad.medyaData, 'base64');
+      await sock.sendMessage(target, { image: buf, caption: adText });
+    } else {
+      await sock.sendMessage(target, { text: adText });
+    }
+    res.json({ success: true });
+  } catch(e) { res.json({ success: false, error: e.message }); }
+});
+
+// ─── API: SET DELETE DELAY ────────────────────────────────────────────────────
 app.post('/api/set-delete-delay', (req, res) => {
   const { delay } = req.body;
-  if (delay >= 1 && delay <= 120) { config.deleteDelay = delay * 1000; saveConfig(); }
-  res.json({ success: true });
+  config.deleteDelay = parseInt(delay) || 60000;
+  saveConfig();
+  io.emit('config', config);
+  res.json({ success: true, deleteDelay: config.deleteDelay });
 });
 
+// ─── API: SET RULE INTERVAL ───────────────────────────────────────────────────
 app.post('/api/set-rule-interval', (req, res) => {
   const { hours } = req.body;
-  if (hours >= 1 && hours <= 24) { config.ruleIntervalHours = hours; saveConfig(); }
-  res.json({ success: true });
-});
-
-app.get('/api/get-rule-message', (req, res) => {
-  res.json({ message: config.customRuleMessage || '' });
-});
-
-app.post('/api/set-rule-message', (req, res) => {
-  config.customRuleMessage = req.body.message || null;
+  config.ruleIntervalHours = parseFloat(hours) || 6;
   saveConfig();
+  scheduleRuleReminder();
+  io.emit('config', config);
+  res.json({ success: true, ruleIntervalHours: config.ruleIntervalHours });
+});
+
+// ─── API: SET RULE MESSAGE ────────────────────────────────────────────────────
+app.post('/api/set-rule-message', (req, res) => {
+  const { message } = req.body;
+  config.customRuleMessage = message || null;
+  saveConfig();
+  io.emit('config', config);
   res.json({ success: true });
 });
 
-// Mevcut ayarları getir (web panel startup'ta yüklesin)
+// ─── API: SET PHOTO WAIT ──────────────────────────────────────────────────────
+app.post('/api/set-photo-wait', (req, res) => {
+  const { seconds } = req.body;
+  config.photoWaitSec = parseInt(seconds) || 30;
+  saveConfig();
+  io.emit('config', config);
+  res.json({ success: true, photoWaitSec: config.photoWaitSec });
+});
+
+// ─── API: SET AD INTERVAL ─────────────────────────────────────────────────────
+app.post('/api/set-ad-interval', (req, res) => {
+  const { minutes } = req.body;
+  config.adIntervalMin = parseFloat(minutes) || 5;
+  saveConfig();
+  io.emit('config', config);
+  res.json({ success: true, adIntervalMin: config.adIntervalMin });
+});
+
+// ─── API: SETTINGS ────────────────────────────────────────────────────────────
 app.get('/api/settings', (req, res) => {
   res.json({
-    deleteDelay: Math.round((config.deleteDelay || 60000) / 1000),
-    ruleIntervalHours: config.ruleIntervalHours || 6,
-    customRuleMessage: config.customRuleMessage || '',
-    automation: config.automation || { welcome: true, noPrice: true, rules: true },
-    warningLimit: config.warningLimit || 10
+    deleteDelay: config.deleteDelay,
+    ruleIntervalHours: config.ruleIntervalHours,
+    customRuleMessage: config.customRuleMessage,
+    automation: config.automation,
+    photoWaitSec: config.photoWaitSec,
+    adIntervalMin: config.adIntervalMin
   });
 });
 
-app.post('/api/restart', (req, res) => {
-  res.json({ success: true, message: 'Reconnecting...' });
-  if (sock) { try { sock.end(); } catch(e) {} }
-  setTimeout(() => connect(), 2000);
+// ─── API: RESTART ─────────────────────────────────────────────────────────────
+app.post('/api/restart', async (req, res) => {
+  res.json({ success: true });
+  setTimeout(() => process.exit(0), 500);
 });
 
-// Oturumu kapat - auth dosyalarını sil, yeni numara ile bağlanmak için
+// ─── API: LOGOUT ──────────────────────────────────────────────────────────────
 app.post('/api/logout', async (req, res) => {
   try {
-    // Bağlantıyı kapat
-    if (sock) {
-      try { await sock.logout(); } catch(e) {}
-      try { sock.end(); } catch(e) {}
-      sock = null;
-    }
+    if (sock) { try { await sock.logout(); } catch(e) {} sock = null; }
     isReady = false;
-    currentQR = null;
-    currentPairingCode = null;
-    connectedGroups = [];
-    
-    // Auth klasörünü temizle
-    if (fs.existsSync(AUTH_DIR)) {
+    // Auth dizinini temizle
+    try {
       const files = fs.readdirSync(AUTH_DIR);
-      for (const file of files) {
-        try { fs.rmSync(path.join(AUTH_DIR, file), { recursive: true, force: true }); } catch(e) {}
-      }
-    }
-    
-    // Aktif grup bilgisini sıfırla
-    activeGroupId = null;
-    try { fs.writeFileSync(ACTIVE_GROUP_FILE, '', 'utf8'); } catch(e) {}
-    
+      files.forEach(f => fs.unlinkSync(path.join(AUTH_DIR, f)));
+    } catch(e) {}
     io.emit('status', { connected: false });
-    io.emit('logged_out');
-    
-    console.log('🔓 Oturum kapatıldı, auth temizlendi');
-    res.json({ success: true, message: 'Oturum kapatıldı. Yeni numara ile bağlanabilirsiniz.' });
-  } catch(e) {
-    console.error('Logout error:', e.message);
-    res.status(500).json({ success: false, error: e.message });
-  }
+    res.json({ success: true });
+  } catch(e) { res.json({ success: false, error: e.message }); }
 });
 
-// Socket.IO
+// ─── API: GROUPS ─────────────────────────────────────────────────────────────
+app.get('/api/groups', async (req, res) => {
+  if (!isReady) return res.json([]);
+  try {
+    await loadGroups();
+    res.json(connectedGroups);
+  } catch(e) { res.json([]); }
+});
+
+// ─── SOCKET.IO ────────────────────────────────────────────────────────────────
 io.on('connection', (socket) => {
-  socket.emit('status', { connected: isReady, groups: connectedGroups, stats });
-  if (currentQR) socket.emit('qr', currentQR);
-  if (currentPairingCode) socket.emit('pairing_code', currentPairingCode);
+  debugLog('Socket.IO client connected: ' + socket.id);
+  socket.emit('status', { connected: isReady });
+  socket.emit('groups', connectedGroups);
+  if (activeGroupId) socket.emit('active_group', activeGroupId);
+  socket.emit('config', config);
+  socket.emit('stats', stats);
 });
 
-// Start
-const PORT = process.env.PORT || 3001;
-server.listen(PORT, '0.0.0.0', () => {
-  console.log(`Server running on port ${PORT}`);
-  // Eğer daha önce kayıtlı session varsa otomatik bağlan
-  if (fs.existsSync(path.join(AUTH_DIR, 'creds.json'))) {
-    console.log('Kayıtlı oturum bulundu, otomatik bağlanılıyor...');
-    connect();
-  } else {
-    console.log('Oturum yok, panel üzerinden bağlantı bekleniyor...');
-  }
+// Stats broadcast her 10 saniyede bir
+setInterval(() => { io.emit('stats', stats); }, 10000);
+
+// ─── SERVER START ─────────────────────────────────────────────────────────────
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, () => {
+  console.log(`✅ Server ${PORT} portunda çalışıyor`);
+  loadDeletedLog();
+  loadConfig();
+  scheduleRuleReminder();
+  connect().catch(e => console.error('Initial connect error:', e.message));
 });
