@@ -18,35 +18,51 @@ const ModerationScreen = () => {
   const [isPaused, setIsPaused] = useState(false);
 
   useEffect(() => {
-    const group = botBridge.groups.find((g) => g.id === botBridge.activeGroupId);
-    setActiveGroupName(group ? group.name : 'Seçilmedi');
-
-    const onMembers = (m) => { setMembers(m); setLoading(false); };
+    const onStatus = (data) => {
+      if (data.groups && data.groups.length > 0) {
+        const activeId = botBridge._activeGroupId;
+        const group = data.groups.find(g => g.id === activeId) || data.groups[0];
+        setActiveGroupName(group ? group.name : 'Seçilmedi');
+      }
+    };
+    const onMembers = (list) => { setMembers(list); setLoading(false); };
+    botBridge.on('status', onStatus);
     botBridge.on('members', onMembers);
-    return () => botBridge.off('members', onMembers);
+    // Sayfa açılınca otomatik yükle
+    loadMembersAuto();
+    return () => {
+      botBridge.off('status', onStatus);
+      botBridge.off('members', onMembers);
+    };
   }, []);
 
-  const checkGroup = () => {
-    const gid = botBridge.groups.find((g) => g.id)?.id;
-    // aktif grup kontrolü
-    if (!botBridge.isConnected) { Alert.alert('Uyarı', 'Bot bağlı değil'); return null; }
-    const active = botBridge.groups.find((g) => true); // en azından bir grup var mı
-    return true;
-  };
-
   const getActiveGroupId = () => {
-    // BotBridge üzerinden aktif grup
-    const groups = botBridge.groups;
-    if (groups.length === 0) return null;
-    // Eğer setActiveGroup yapıldıysa onu kullan
-    return groups[0]?.id; // fallback
+    return botBridge._activeGroupId || botBridge.groups[0]?.id || null;
   };
 
-  const loadMembers = () => {
-    const groups = botBridge.groups;
-    if (groups.length === 0) { Alert.alert('Uyarı', 'Önce Ana Sayfa\'dan grup seçin'); return; }
+  const loadMembersAuto = async () => {
+    if (!botBridge.isConnected) return;
+    const gid = getActiveGroupId();
+    if (!gid) return;
     setLoading(true);
-    botBridge.getMembers(groups[0]?.id);
+    try {
+      const res = await fetch(`${botBridge.constructor._serverUrl || 'https://whatsapp-grup-yonetici-production.up.railway.app'}/api/members?groupId=${gid}`);
+      const data = await res.json();
+      if (data.members) { setMembers(data.members); }
+    } catch(e) {}
+    setLoading(false);
+  };
+
+  const loadMembers = async () => {
+    const gid = getActiveGroupId();
+    if (!gid) { Alert.alert('Uyarı', 'Önce Ana Sayfa\'dan grup seçin'); return; }
+    setLoading(true);
+    try {
+      const res = await fetch(`https://whatsapp-grup-yonetici-production.up.railway.app/api/members?groupId=${gid}`);
+      const data = await res.json();
+      if (data.members) { setMembers(data.members); }
+    } catch(e) { Alert.alert('Hata', 'Üyeler yüklenemedi'); }
+    setLoading(false);
   };
 
   const handleMute = (member) => {
@@ -131,7 +147,10 @@ const ModerationScreen = () => {
   };
 
   const filteredMembers = searchText
-    ? members.filter((m) => m.name.includes(searchText) || m.number.includes(searchText))
+    ? members.filter((m) =>
+        (m.name || '').toLowerCase().includes(searchText.toLowerCase()) ||
+        (m.number || '').includes(searchText)
+      )
     : members;
 
   return (
@@ -162,32 +181,47 @@ const ModerationScreen = () => {
         <View style={styles.searchRow}>
           <TextInput
             style={styles.searchInput}
-            placeholder="Ara..."
+            placeholder="İsim veya numara ara..."
             placeholderTextColor="#8696a0"
             value={searchText}
             onChangeText={setSearchText}
           />
           <TouchableOpacity style={styles.searchBtn} onPress={loadMembers}>
-            <Text style={styles.searchBtnText}>{loading ? '⏳' : '🔍'}</Text>
+            <Text style={styles.searchBtnText}>{loading ? '⏳' : '🔄'}</Text>
           </TouchableOpacity>
         </View>
 
         {filteredMembers.map((m) => (
-          <View key={m.id} style={styles.memberRow}>
+          <View key={m.id} style={[styles.memberRow, m.isMuted && { opacity: 0.5 }]}>
             <View style={{ flex: 1 }}>
-              <Text style={styles.memberName}>{m.name} {m.isAdmin ? '👑' : ''}</Text>
-              <Text style={styles.memberNum}>{m.number}</Text>
+              <Text style={styles.memberName}>
+                {m.name && m.name !== m.number ? m.name : `+${m.number}`}
+                {m.isAdmin ? ' 👑' : ''}
+                {m.isMuted ? ' 🔇' : ''}
+              </Text>
+              {m.name && m.name !== m.number && (
+                <Text style={styles.memberNum}>+{m.number}</Text>
+              )}
             </View>
             {!m.isAdmin && (
               <View style={styles.actionRow}>
-                <TouchableOpacity onPress={() => handleMute(m)}><Text style={styles.actionIcon}>{mutedSet.has(m.id) ? '🔊' : '🔇'}</Text></TouchableOpacity>
-                <TouchableOpacity onPress={() => handleRemove(m)}><Text style={styles.actionIcon}>🚫</Text></TouchableOpacity>
-                <TouchableOpacity onPress={() => handleBan(m)}><Text style={styles.actionIcon}>⛔</Text></TouchableOpacity>
+                <TouchableOpacity onPress={() => handleMute(m)}>
+                  <Text style={styles.actionIcon}>{m.isMuted ? '🔊' : '🔇'}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => handleRemove(m)}>
+                  <Text style={styles.actionIcon}>🚫</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => handleBan(m)}>
+                  <Text style={styles.actionIcon}>⛔</Text>
+                </TouchableOpacity>
               </View>
             )}
           </View>
         ))}
-        {members.length === 0 && <Text style={styles.empty}>🔍 basarak üyeleri listele</Text>}
+        {members.length === 0 && !loading && (
+          <Text style={styles.empty}>Üye bulunamadı — 🔍 ile yenile</Text>
+        )}
+        {loading && <Text style={styles.empty}>⏳ Yükleniyor...</Text>}
       </View>
     </ScrollView>
   );
