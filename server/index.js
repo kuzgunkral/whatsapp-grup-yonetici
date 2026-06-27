@@ -565,9 +565,10 @@ app.post('/api/clean-no-price', async (req, res) => {
 
 // ─── API: AUTOMATION ──────────────────────────────────────────────────────────
 app.post('/api/automation', (req, res) => {
-  const { type, value } = req.body;
+  const { type, value, enabled } = req.body;
+  const newVal = (value !== undefined) ? value : enabled; // her ikisini de kabul et
   if (type && config.automation.hasOwnProperty(type)) {
-    config.automation[type] = value;
+    config.automation[type] = !!newVal;
     saveConfig();
     io.emit('config', config);
     res.json({ success: true, config });
@@ -617,9 +618,10 @@ app.post('/api/clear-all-logs', (req, res) => {
 
 // ─── API: RESTORE AD ─────────────────────────────────────────────────────────
 app.post('/api/restore-ad', async (req, res) => {
-  const { adId, groupId } = req.body;
+  const { adId, id, groupId } = req.body;
+  const lookupId = adId || id;
   if (!isReady) return res.json({ success: false, error: 'Bağlı değil' });
-  const ad = deletedAdsLog.find(a => a.id === adId);
+  const ad = deletedAdsLog.find(a => a.id === lookupId);
   if (!ad) return res.json({ success: false, error: 'İlan bulunamadı' });
   try {
     const target = groupId || activeGroupId;
@@ -652,9 +654,10 @@ app.post('/api/restore-ad', async (req, res) => {
 
 // ─── API: RESTORE AS AD ──────────────────────────────────────────────────────
 app.post('/api/restore-as-ad', async (req, res) => {
-  const { adId, groupId } = req.body;
+  const { adId, id, groupId } = req.body;
+  const lookupId = adId || id;
   if (!isReady) return res.json({ success: false, error: 'Bağlı değil' });
-  const ad = deletedAdsLog.find(a => a.id === adId);
+  const ad = deletedAdsLog.find(a => a.id === lookupId);
   if (!ad) return res.json({ success: false, error: 'İlan bulunamadı' });
   try {
     const target = groupId || activeGroupId;

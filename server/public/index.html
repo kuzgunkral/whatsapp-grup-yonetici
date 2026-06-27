@@ -261,10 +261,10 @@
           document.getElementById('statWelcome').textContent = data.stats.welcomesSent || 0;
           document.getElementById('statRules').textContent = data.stats.rulesReminded || 0;
         }
-        if (data.config) {
-          setToggle('toggleWelcome', data.config.welcome);
-          setToggle('toggleNoPrice', data.config.noPrice);
-          setToggle('toggleRules', data.config.rules);
+        if (data.config && data.config.automation) {
+          setToggle('toggleWelcome', data.config.automation.welcome);
+          setToggle('toggleNoPrice', data.config.automation.noPrice);
+          setToggle('toggleRules', data.config.automation.rules);
         }
       } else {
         el.innerHTML = '<span class="status-dot offline"></span>Bağlı Değil';
