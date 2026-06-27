@@ -20,7 +20,13 @@ const LogsScreen = () => {
     const onRestore = () => loadLogs();
     botBridge.on('deleted_ads', onAds);
     botBridge.on('restore_done', onRestore);
-    return () => { botBridge.off('deleted_ads', onAds); botBridge.off('restore_done', onRestore); };
+    // Ekran açıkken 15sn'de bir otomatik yenile (bot ilan silince log görünsün)
+    const autoRefresh = setInterval(() => botBridge.getDeletedAds(), 15000);
+    return () => {
+      botBridge.off('deleted_ads', onAds);
+      botBridge.off('restore_done', onRestore);
+      clearInterval(autoRefresh);
+    };
   }, []);
 
   const loadLogs = () => { setRefreshing(true); botBridge.getDeletedAds(); };

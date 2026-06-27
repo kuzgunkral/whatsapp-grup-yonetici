@@ -236,6 +236,11 @@
       socket.on('qr', (qr) => console.log('QR received'));
       socket.on('pairing_code', (code) => showPairingCode(code));
       socket.on('log', (data) => addLog(data));
+      socket.on('deleted_ads_updated', () => {
+        // Log sayfası açıksa otomatik yenile
+        const logPage = document.getElementById('page-log');
+        if (logPage && logPage.classList.contains('active')) loadDeletedAds();
+      });
     } catch(e) {}
 
     // Durum polling

@@ -194,6 +194,7 @@ async function kuralFiyatsizResim({ sock, chatId, msg, userId, userName, userPho
     if (deletedAdsLog.length > 500) deletedAdsLog.splice(500);
     saveDeletedLog();
     io.emit('log', { type: 'deleted', user: delUserName || delUserPhone, group: delGroupName });
+    io.emit('deleted_ads_updated', { total: deletedAdsLog.length });
   }, WAIT_MS);
 
   return 'waiting';
@@ -236,6 +237,7 @@ async function kuralFiyatsizMetin({ sock, chatId, realUserId, groupName, msg, us
     if (deletedAdsLog.length > 500) deletedAdsLog.splice(500);
     saveDeletedLog();
     io.emit('log', { type: 'deleted', user: userName || userPhone, group: groupName });
+    io.emit('deleted_ads_updated', { total: deletedAdsLog.length });
     return 'deleted';
   }
 
@@ -283,6 +285,7 @@ async function kuralFiyatsizMetin({ sock, chatId, realUserId, groupName, msg, us
     if (deletedAdsLog.length > 500) deletedAdsLog.splice(500);
     saveDeletedLog();
     io.emit('log', { type: 'deleted', user: delUserName2 || delUserPhone2, group: delGroupName2 });
+    io.emit('deleted_ads_updated', { total: deletedAdsLog.length });
   }, config.deleteDelay || 60000);
 
   return 'warned';
