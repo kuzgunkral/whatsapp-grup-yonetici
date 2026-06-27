@@ -33,20 +33,29 @@ const HomeScreen = () => {
     // Hemen status kontrol et
     botBridge.init();
     
-    // Kayıtlı grubu yükle
-    AsyncStorage.getItem('activeGroupId').then(savedId => {
-      if (savedId) {
-        const found = botBridge.groups.find(g => g.id === savedId);
-        if (found) { setActiveGroup(found); botBridge.setActiveGroup(savedId); }
-      }
-    });
     // Kayıtlı telefon numarasını yükle
     AsyncStorage.getItem('phoneNumber').then(saved => { if (saved) setPhoneNumber(saved); });
+
+    // Kayıtlı grubu uygula (gruplar gelince)
+    const applysavedGroup = (groupList) => {
+      AsyncStorage.getItem('activeGroupId').then(savedId => {
+        if (savedId) {
+          const found = groupList.find(g => g.id === savedId);
+          if (found) {
+            setActiveGroup(found);
+            botBridge.setActiveGroup(savedId);
+          }
+        }
+      });
+    };
 
     const onStatus = (data) => {
       setLoading(false);
       setIsConnected(data.connected);
-      if (data.groups) setGroups(data.groups);
+      if (data.groups) {
+        setGroups(data.groups);
+        applysavedGroup(data.groups);
+      }
       if (data.stats) setStats(data.stats);
     };
     const onPairingCode = (code) => {
@@ -55,13 +64,7 @@ const HomeScreen = () => {
     };
     const onGroups = (g) => {
       setGroups(g);
-      // Kayıtlı grubu aktif et
-      AsyncStorage.getItem('activeGroupId').then(savedId => {
-        if (savedId) {
-          const found = g.find(gr => gr.id === savedId);
-          if (found) { setActiveGroup(found); botBridge.setActiveGroup(savedId); }
-        }
-      });
+      applysavedGroup(g);
     };
     const onLog = (data) => {
       setLogs((prev) => [{

@@ -225,32 +225,35 @@ async function handleMessage(msg) {
     var kmVar = /km/i;
     var hasFiyat = fiyatPattern.test(msgText) || fiyatKelime.test(msgText) || ((fiyatBuyukSayi.test(msgText) || fiyatNoktali.test(msgText)) && !kmVar.test(msgText));
 
-    // === 1 DAKİKADA 1 İLAN KONTROLÜ (fiyatlı da olsa) ===
+    // === 5 DAKİKADA 1 İLAN KONTROLÜ (fiyatlı da olsa) ===
     var nowTs = Date.now();
+    var ONE_HOUR_MS = 60 * 60 * 1000;
+    var FIVE_MIN_MS = 5 * 60 * 1000;
     if (!spamTracker[userId]) spamTracker[userId] = { firstAdTime: 0, adCount: 0, ozelUyari: false, ozelUyariTime: 0 };
     var tracker = spamTracker[userId];
 
-    // 1dk geçtiyse yeni dönem başlat (ozelUyari 1 saat korunur)
-    if (nowTs - tracker.firstAdTime > 60000) {
+    // 1 saat geçtiyse ozelUyari sıfırla
+    if (nowTs - tracker.ozelUyariTime > ONE_HOUR_MS) {
+      tracker.ozelUyari = false;
+    }
+
+    // 5dk geçtiyse yeni dönem başlat
+    if (nowTs - tracker.firstAdTime > FIVE_MIN_MS) {
       tracker.adCount = 0;
       tracker.firstAdTime = nowTs;
-      // ozelUyari sadece 1 saat sonra sıfırlanır
-      if (nowTs - tracker.ozelUyariTime > 3600000) {
-        tracker.ozelUyari = false;
-      }
     }
 
     if (tracker.adCount === 0) {
       // İlk ilan bu dönemde
       tracker.adCount = 1;
       tracker.firstAdTime = nowTs;
-    } else if (nowTs - tracker.firstAdTime < 60000) {
-      // 1dk dolmadan 2. ilan → sil + DM uyarı (1 saatte 1 kez)
+    } else if (nowTs - tracker.firstAdTime < FIVE_MIN_MS) {
+      // 5dk dolmadan 2. ilan → sil + DM uyarı (1 saatte 1 kez)
       tracker.adCount++;
-      if (!tracker.ozelUyari || (nowTs - tracker.ozelUyariTime > 3600000)) {
+      if (!tracker.ozelUyari || (nowTs - tracker.ozelUyariTime > ONE_HOUR_MS)) {
         tracker.ozelUyari = true;
         tracker.ozelUyariTime = nowTs;
-        try { await sock.sendMessage(userId, { text: '\u26A0\uFE0F 1 dakikada 1 ilan atabilirsiniz. L\u00fctfen bekleyiniz.\n\n\u{1F6E1}\uFE0F _Grup Y\u00f6netimi_' }); } catch(e) {}
+        try { await sock.sendMessage(userId, { text: '\u26A0\uFE0F 5 dakikada 1 ilan atabilirsiniz. L\u00fctfen bekleyiniz.\n\n\u{1F6E1}\uFE0F _Grup Y\u00f6netimi_' }); } catch(e) {}
       }
       try { await sock.sendMessage(chatId, { delete: msg.key }); } catch(e) {}
       stats.messagesDeleted++;

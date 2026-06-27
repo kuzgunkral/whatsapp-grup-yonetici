@@ -14,6 +14,8 @@ const ModerationScreen = () => {
   const [searchText, setSearchText] = useState('');
   const [loading, setLoading] = useState(false);
   const [activeGroupName, setActiveGroupName] = useState('');
+  const [mutedSet, setMutedSet] = useState(new Set());
+  const [isPaused, setIsPaused] = useState(false);
 
   useEffect(() => {
     const group = botBridge.groups.find((g) => g.id === botBridge.activeGroupId);
@@ -48,9 +50,24 @@ const ModerationScreen = () => {
   };
 
   const handleMute = (member) => {
-    Alert.alert('Sustur', `${member.name} 5dk susturulsun mu?`, [
+    const isMuted = mutedSet.has(member.id);
+    const title = isMuted ? '🔊 Susturmayı Kaldır' : '🔇 Sustur';
+    const btnLabel = isMuted ? 'Aç' : 'Sustur';
+    Alert.alert(title, `${member.name || member.number}`, [
       { text: 'İptal', style: 'cancel' },
-      { text: 'Sustur', onPress: () => botBridge.muteMember(botBridge.groups[0]?.id, member.id) },
+      {
+        text: btnLabel,
+        onPress: async () => {
+          const res = await botBridge.muteMember(botBridge.groups[0]?.id, member.id);
+          if (res && res.muted === false) {
+            setMutedSet(prev => { const s = new Set(prev); s.delete(member.id); return s; });
+            Alert.alert('🔊', `${member.name || member.number} susturması kaldırıldı`);
+          } else {
+            setMutedSet(prev => new Set(prev).add(member.id));
+            Alert.alert('🔇', `${member.name || member.number} susturuldu`);
+          }
+        },
+      },
     ]);
   };
 
@@ -66,6 +83,14 @@ const ModerationScreen = () => {
       { text: 'İptal', style: 'cancel' },
       { text: 'Banla', style: 'destructive', onPress: () => botBridge.banMember(botBridge.groups[0]?.id, member.id) },
     ]);
+  };
+
+  const handleSendRules = async () => {
+    const gid = botBridge.groups[0]?.id;
+    if (!gid) { Alert.alert('Uyarı', 'Grup seçilmedi'); return; }
+    const res = await botBridge.sendRules(gid);
+    if (res && res.success) Alert.alert('✅', 'Kurallar gönderildi');
+    else Alert.alert('Bilgi', res?.error || 'Gönderildi');
   };
 
   const handleCloseGroup = () => {
@@ -92,7 +117,18 @@ const ModerationScreen = () => {
   };
 
   const handleOpenGroup = () => botBridge.openGroup(botBridge.groups[0]?.id);
-  const handlePause = () => botBridge.pauseGroup(botBridge.groups[0]?.id);
+  const handlePause = async () => {
+    const gid = botBridge.groups[0]?.id;
+    if (!gid) { Alert.alert('Uyarı', 'Grup seçilmedi'); return; }
+    const res = await botBridge.pauseGroup(gid);
+    if (res && res.paused === false) {
+      setIsPaused(false);
+      Alert.alert('✅ Bot Aktif', 'Bot tekrar aktif hale getirildi');
+    } else {
+      setIsPaused(true);
+      Alert.alert('⏸️ Bot Pasif', 'Bot duraklatıldı');
+    }
+  };
 
   const filteredMembers = searchText
     ? members.filter((m) => m.name.includes(searchText) || m.number.includes(searchText))
@@ -102,6 +138,9 @@ const ModerationScreen = () => {
     <ScrollView style={styles.container}>
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>🛡️ Grup İşlemleri</Text>
+        <TouchableOpacity style={[styles.btn, styles.btnGreen, { marginBottom: 10 }]} onPress={handleSendRules}>
+          <Text style={styles.btnText}>📋 Kural Gönder</Text>
+        </TouchableOpacity>
         <View style={styles.btnRow}>
           <TouchableOpacity style={[styles.btn, styles.btnRed]} onPress={handleCloseGroup}>
             <Text style={styles.btnText}>🔒 Kapat</Text>
@@ -109,8 +148,8 @@ const ModerationScreen = () => {
           <TouchableOpacity style={[styles.btn, styles.btnGreen]} onPress={handleOpenGroup}>
             <Text style={styles.btnText}>🔓 Aç</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={[styles.btn, styles.btnYellow]} onPress={handlePause}>
-            <Text style={styles.btnText}>⏸️ Duraklat</Text>
+          <TouchableOpacity style={[styles.btn, isPaused ? styles.btnGreen : styles.btnYellow]} onPress={handlePause}>
+            <Text style={styles.btnText}>{isPaused ? '▶️ Bot Aktif' : '⏸️ Duraklat'}</Text>
           </TouchableOpacity>
         </View>
         <TouchableOpacity style={[styles.btn, styles.btnRed, { marginTop: 10 }]} onPress={handleCleanNoPrice}>
@@ -141,7 +180,7 @@ const ModerationScreen = () => {
             </View>
             {!m.isAdmin && (
               <View style={styles.actionRow}>
-                <TouchableOpacity onPress={() => handleMute(m)}><Text style={styles.actionIcon}>🔇</Text></TouchableOpacity>
+                <TouchableOpacity onPress={() => handleMute(m)}><Text style={styles.actionIcon}>{mutedSet.has(m.id) ? '🔊' : '🔇'}</Text></TouchableOpacity>
                 <TouchableOpacity onPress={() => handleRemove(m)}><Text style={styles.actionIcon}>🚫</Text></TouchableOpacity>
                 <TouchableOpacity onPress={() => handleBan(m)}><Text style={styles.actionIcon}>⛔</Text></TouchableOpacity>
               </View>

@@ -68,12 +68,14 @@ class BotBridge extends EventEmitter {
   getStatus() { this._fetchStatus(); }
   setActiveGroup(groupId) { this._post('/api/set-active-group', { groupId }); }
   sendMessage(groupId, message) { this._post('/api/send-message', { groupId, message }); }
+  async sendPlainMessage(groupId, message) { return await this._post('/api/send-message', { groupId, message }); }
   sendRules(groupId) { this._post('/api/send-rules', { groupId }); }
-  sendAnnouncement(groupId, message) { this._post('/api/send-announcement', { groupId, message }); }
+  async sendAnnouncement(groupId, message) { return await this._post('/api/send-announcement', { groupId, message }); }
+  async setGroupDescription(groupId, description) { return await this._post('/api/set-group-description', { groupId, description }); }
   closeGroup(groupId) { this._post('/api/close-group', { groupId }); }
   openGroup(groupId) { this._post('/api/open-group', { groupId }); }
   pauseGroup(groupId) { this._post('/api/pause-group', { groupId }); }
-  muteMember(groupId, memberId) { this._post('/api/mute-member', { groupId, memberId }); }
+  async muteMember(groupId, memberId) { return await this._post('/api/mute-member', { groupId, memberId }); }
   unmuteMember(groupId, memberId) { this._post('/api/unmute-member', { groupId, memberId }); }
   removeMember(groupId, memberId) { this._post('/api/remove-member', { groupId, memberId }); }
   banMember(groupId, memberId) { this._post('/api/ban-member', { groupId, memberId }); }
@@ -88,8 +90,10 @@ class BotBridge extends EventEmitter {
   setDeleteDelay(seconds) { this._post('/api/set-delete-delay', { delay: seconds }); }
   setRuleInterval(hours) { this._post('/api/set-rule-interval', { hours }); }
   setCustomRule(message) { this._post('/api/set-rule-message', { message }); }
+  async getRuleMessage() { return await this._get('/api/get-rule-message'); }
   async cleanNoPrice(groupId) { return await this._post('/api/clean-no-price', { groupId }); }
   restart() { this._post('/api/restart'); }
+  async logout() { return await this._post('/api/logout'); }
 }
 
 const botBridge = new BotBridge();

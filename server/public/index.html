@@ -105,7 +105,7 @@
       <button class="btn btn-danger" onclick="cleanNoPrice()">🗑️ Tüm Fiyatsız İlanları Sil</button>
       <button class="btn btn-warning" onclick="closeGroup()">🔒 Grubu Kapat</button>
       <button class="btn btn-secondary" onclick="openGroup()">🔓 Grubu Aç</button>
-      <button class="btn btn-secondary" onclick="pauseGroup()">⏸️ Botu Duraklat</button>
+      <button class="btn btn-secondary" id="pauseBtn" onclick="pauseGroup()">⏸️ Botu Duraklat</button>
     </div>
     <div class="card">
       <div class="card-title">👥 Üyeler</div>
@@ -117,7 +117,16 @@
   <!-- MESAJ -->
   <div class="page" id="page-msg">
     <div class="card">
-      <div class="card-title">💬 Mesaj Gönder</div>
+      <div class="card-title">📋 Kural Mesajı</div>
+      <textarea id="ruleText" placeholder="Kural metnini buraya yazın..." maxlength="5000" style="min-height:120px"></textarea>
+      <div style="font-size:11px;color:#8696a0;text-align:right;margin:-8px 0 8px" id="ruleCharCount">0/5000</div>
+      <div style="display:flex;gap:8px">
+        <button class="btn" style="flex:1;background:#2a3942;border:1px solid #00a884;color:#00a884" onclick="saveRuleMessage()">💾 Kaydet</button>
+        <button class="btn btn-primary" style="flex:1" onclick="sendRules()">📋 Kural Gönder</button>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">💬 Özel Mesaj</div>
       <textarea id="msgText" placeholder="Gruba gönderilecek mesaj..."></textarea>
       <button class="btn btn-primary" onclick="sendMessage()">Gönder</button>
     </div>
@@ -166,6 +175,7 @@
     <div class="card">
       <div class="card-title">🔄 Bot</div>
       <button class="btn btn-warning" onclick="restartBot()">🔄 Bot Restart</button>
+      <button class="btn btn-danger" onclick="logoutBot()" style="margin-top:8px">🔓 Oturumu Kapat (Başka Numara)</button>
     </div>
   </div>
 
@@ -288,11 +298,44 @@
       renderMembers(filtered);
     }
 
+    // Kural metnini sunucudan yükle
+    async function loadRuleMessage() {
+      try {
+        const res = await fetch(API + '/api/get-rule-message');
+        const data = await res.json();
+        if (data.message) {
+          document.getElementById('ruleText').value = data.message;
+          document.getElementById('ruleCharCount').textContent = data.message.length + '/5000';
+        }
+      } catch(e) {}
+    }
+
+    // Kural metnini kaydet
+    async function saveRuleMessage() {
+      const msg = document.getElementById('ruleText').value.trim();
+      const res = await fetch(API + '/api/set-rule-message', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({message: msg}) });
+      const data = await res.json();
+      if (data.success) alert('✅ Kural mesajı kaydedildi');
+      else alert('❌ Kaydedilemedi');
+    }
+
     async function sendRules() { if (!activeGroupId) { alert('Grup seçin'); return; } await fetch(API + '/api/send-rules', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({groupId: activeGroupId}) }); alert('Kurallar gönderildi'); }
     async function cleanNoPrice() { if (!activeGroupId) { alert('Grup seçin'); return; } const r = await fetch(API + '/api/clean-no-price', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({groupId: activeGroupId}) }); const d = await r.json(); alert(d.message || d.count + ' ilan silindi'); }
     async function closeGroup() { if (!activeGroupId) return; await fetch(API + '/api/close-group', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({groupId: activeGroupId}) }); alert('Grup kapatıldı'); }
     async function openGroup() { if (!activeGroupId) return; await fetch(API + '/api/open-group', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({groupId: activeGroupId}) }); alert('Grup açıldı'); }
-    async function pauseGroup() { if (!activeGroupId) return; await fetch(API + '/api/pause-group', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({groupId: activeGroupId}) }); alert('Bot duraklatıldı'); }
+    async function pauseGroup() {
+      if (!activeGroupId) return;
+      const res = await fetch(API + '/api/pause-group', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({groupId: activeGroupId}) });
+      const data = await res.json();
+      const btn = document.getElementById('pauseBtn');
+      if (data.paused === false) {
+        if (btn) { btn.textContent = '⏸️ Botu Duraklat'; btn.className = 'btn btn-secondary'; }
+        alert('✅ Bot Aktif\nBot tekrar aktif hale getirildi');
+      } else {
+        if (btn) { btn.textContent = '▶️ Botu Aktifleştir'; btn.className = 'btn btn-primary'; }
+        alert('⏸️ Bot Pasif\nBot duraklatıldı');
+      }
+    }
 
     async function sendMessage() {
       if (!activeGroupId) { alert('Grup seçin'); return; }
@@ -305,14 +348,40 @@
 
     async function sendAnnouncement() {
       if (!activeGroupId) { alert('Grup seçin'); return; }
-      const msg = document.getElementById('announceText').value;
-      if (!msg) return;
-      await fetch(API + '/api/send-announcement', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({groupId: activeGroupId, message: msg}) });
-      document.getElementById('announceText').value = '';
-      alert('Duyuru gönderildi');
+      const msg = document.getElementById('announceText').value.trim();
+      if (!msg) { alert('Duyuru metni yazın'); return; }
+      const res = await fetch(API + '/api/send-announcement', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({groupId: activeGroupId, message: msg}) });
+      const data = await res.json();
+      if (data.success) {
+        document.getElementById('announceText').value = '';
+        if (data.messageId) window._lastAnnouncementId = data.messageId;
+        alert('✅ Duyuru gönderildi');
+      } else { alert('❌ Duyuru gönderilemedi: ' + (data.error || '')); }
     }
 
-    async function muteMember(id) { await fetch(API + '/api/mute-member', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({groupId: activeGroupId, memberId: id}) }); alert('Susturuldu'); }
+    async function pinLastMessage() {
+      if (!activeGroupId) { alert('Grup seçin'); return; }
+      const msg = document.getElementById('announceText').value.trim();
+      if (!msg) { alert('Sabitlenecek mesajı yazın'); return; }
+      // Mesajı gönder sonra sabitle
+      const res = await fetch(API + '/api/send-announcement', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({groupId: activeGroupId, message: msg}) });
+      const data = await res.json();
+      if (!data.success) { alert('❌ Mesaj gönderilemedi'); return; }
+      document.getElementById('announceText').value = '';
+      await new Promise(r => setTimeout(r, 1500));
+      const pinRes = await fetch(API + '/api/pin-message', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({groupId: activeGroupId, messageId: data.messageId || null}) });
+      const pinData = await pinRes.json();
+      if (pinData.success) { alert('📌 Mesaj gönderildi ve sabitlendi'); }
+      else { alert('✅ Gönderildi\n⚠️ Sabitleme başarısız: ' + (pinData.error || '')); }
+    }
+
+    async function muteMember(id) {
+      const res = await fetch(API + '/api/mute-member', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({groupId: activeGroupId, memberId: id}) });
+      const data = await res.json();
+      if (data.muted === false) alert('🔊 Susturma kaldırıldı');
+      else alert('🔇 Susturuldu');
+      loadMembers();
+    }
     async function removeMember(id) { if (!confirm('Bu üye çıkarılacak?')) return; await fetch(API + '/api/remove-member', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({groupId: activeGroupId, memberId: id}) }); loadMembers(); }
 
     function addLog(data) {
@@ -341,6 +410,22 @@
     }
 
     async function restartBot() { if (!confirm('Bot restart edilecek?')) return; await fetch(API + '/api/restart', { method: 'POST' }); alert('Restart edildi'); }
+
+    async function logoutBot() {
+      if (!confirm('⚠️ Oturum kapatılacak!\n\nMevcut WhatsApp bağlantısı kesilir ve kayıtlı oturum silinir.\nYeni telefon numarası ile bağlanabilirsiniz.\n\nDevam edilsin mi?')) return;
+      try {
+        const res = await fetch(API + '/api/logout', { method: 'POST' });
+        const data = await res.json();
+        if (data.success) {
+          alert('✅ Oturum kapatıldı.\nSayfayı yenileyerek yeni numara ile bağlanabilirsiniz.');
+          location.reload();
+        } else {
+          alert('Hata: ' + (data.error || 'Bilinmeyen hata'));
+        }
+      } catch(e) {
+        alert('Sunucuya bağlanılamadı: ' + e.message);
+      }
+    }
 
     // ======= SİLİNEN İLANLAR =======
     let allDeletedAds = [];
@@ -433,6 +518,7 @@
 
     function switchTab(name) {
       document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+      if (name === 'msg') loadRuleMessage();
       document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
       document.getElementById('page-' + name).classList.add('active');
       event.currentTarget.classList.add('active');
