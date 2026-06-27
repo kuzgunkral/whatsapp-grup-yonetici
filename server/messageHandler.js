@@ -55,8 +55,8 @@ async function kural5dkLimit({ sock, chatId, realUserId, groupName, msg, userId,
     t.firstAdTime = now;
   }
 
-  // 5sn içinde gelenler aynı toplu ilan
-  const isPartOfFirst = (now - t.firstAdTime < 5000);
+  // 30sn içinde gelenler aynı toplu ilan (WhatsApp toplu resim gönderimi)
+  const isPartOfFirst = (now - t.firstAdTime < 30000);
 
   // Fiyat varsa hasPaid işaretle
   if (hasFiyat) {
