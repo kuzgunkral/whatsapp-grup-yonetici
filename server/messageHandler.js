@@ -25,7 +25,7 @@ function hasFiyatMi(text) {
 
 // ─── KURAL 1: 5 DAKİKADA 1 İLAN LİMİTİ ──────────────────────────────────────
 // Aynı kullanıcı 5dk içinde 2. ilan atarsa sil + DM uyarı (1 saatte 1 kez)
-async function kural5dkLimit({ sock, chatId, realUserId, groupName, msg, userId, msgText, hasFiyat, spamTracker, stats, getDeleteKey, config }) {
+async function kural5dkLimit({ sock, chatId, realUserId, groupName, msg, userId, msgText, hasFiyat, spamTracker, stats, getDeleteKey, config, deletedAdsLog, saveDeletedLog, io }) {
   const now = Date.now();
   const ONE_HOUR = 24 * 60 * 60 * 1000; // 24 saatte 1 DM uyarı
   const FIVE_MIN = (config.adIntervalMin || 5) * 60 * 1000;
@@ -118,7 +118,7 @@ async function kural5dkLimit({ sock, chatId, realUserId, groupName, msg, userId,
 }
 
 // ─── KURAL 2: 10 RESİM LİMİTİ (fiyatlı ilanlar için) ───────────────────────
-async function kural10Limit({ sock, chatId, realUserId, groupName, msg, userId, spamTracker, stats, getDeleteKey }) {
+async function kural10Limit({ sock, chatId, realUserId, groupName, msg, userId, spamTracker, stats, getDeleteKey, deletedAdsLog, saveDeletedLog, io }) {
   const t = spamTracker[userId];
   if (!t || !t.hasPaid) return 'continue';
   if (t.count > 10) {

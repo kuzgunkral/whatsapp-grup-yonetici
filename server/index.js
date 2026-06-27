@@ -374,7 +374,7 @@ async function handleMessage(msg) {
 
     // ── KURAL: Toplu resim işleme ──
     if (hasMedia) {
-      const ctx = { sock, chatId, realUserId, groupName, msg, userId, msgText, hasFiyat, spamTracker, stats, getDeleteKey, config };
+      const ctx = { sock, chatId, realUserId, groupName, msg, userId, msgText, hasFiyat, spamTracker, stats, getDeleteKey, config, deletedAdsLog, saveDeletedLog, io };
 
       // 1. 5dk limit
       const res5dk = await kural5dkLimit(ctx);
