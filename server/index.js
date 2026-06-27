@@ -735,6 +735,34 @@ app.get('/api/settings', (req, res) => {
   });
 });
 
+// ─── API: MEMBERS ─────────────────────────────────────────────────────────────
+app.get('/api/members', async (req, res) => {
+  const groupId = req.query.groupId || activeGroupId;
+  if (!isReady || !groupId) return res.json({ members: [] });
+  try {
+    const meta = await sock.groupMetadata(groupId);
+    const members = meta.participants.map(p => {
+      const phone = p.id.includes('@lid')
+        ? (p.phoneNumber ? p.phoneNumber.split('@')[0] : p.id.split('@')[0])
+        : p.id.split('@')[0];
+      const name = contactNames[p.id] || contactNames[p.phoneNumber] || p.notify || null;
+      return {
+        id: p.id,
+        number: phone,
+        name: name || phone,
+        isAdmin: p.admin === 'admin' || p.admin === 'superadmin',
+        isMuted: mutedUsers.has(p.id)
+      };
+    });
+    members.sort((a, b) => {
+      if (a.isAdmin && !b.isAdmin) return -1;
+      if (!a.isAdmin && b.isAdmin) return 1;
+      return (a.name || a.number).localeCompare(b.name || b.number, 'tr');
+    });
+    res.json({ members, total: members.length });
+  } catch(e) { res.json({ members: [], error: e.message }); }
+});
+
 // ─── API: RESTART ─────────────────────────────────────────────────────────────
 app.post('/api/restart', async (req, res) => {
   res.json({ success: true });

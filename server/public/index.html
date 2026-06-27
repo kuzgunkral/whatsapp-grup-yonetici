@@ -109,7 +109,9 @@
     </div>
     <div class="card">
       <div class="card-title">👥 Üyeler</div>
-      <input type="text" id="memberSearch" placeholder="Üye ara..." oninput="searchMembers()">
+      <div id="memberCount" style="font-size:12px;color:#8696a0;margin-bottom:8px;"></div>
+      <input type="text" id="memberSearch" placeholder="İsim veya numara ara..." oninput="searchMembers()" style="margin-bottom:8px;">
+      <button class="btn btn-secondary" onclick="loadMembers()" style="margin-bottom:8px;">🔄 Yenile</button>
       <div id="memberList"><div class="empty">Grup seçin</div></div>
     </div>
   </div>
@@ -261,11 +263,7 @@
           document.getElementById('statWelcome').textContent = data.stats.welcomesSent || 0;
           document.getElementById('statRules').textContent = data.stats.rulesReminded || 0;
         }
-        if (data.config && data.config.automation) {
-          setToggle('toggleWelcome', data.config.automation.welcome);
-          setToggle('toggleNoPrice', data.config.automation.noPrice);
-          setToggle('toggleRules', data.config.automation.rules);
-        }
+        // Toggle'lar loadSettings() ile yüklenir, her poll'da ezilmez
       } else {
         el.innerHTML = '<span class="status-dot offline"></span>Bağlı Değil';
         document.getElementById('connectCard').style.display = 'block';
@@ -317,13 +315,32 @@
 
     function renderMembers(list) {
       const el = document.getElementById('memberList');
-      if (!list.length) { el.innerHTML = '<div class="empty">Üye yok</div>'; return; }
-      el.innerHTML = list.map(m => `<div class="member-item"><div class="info">${m.name || m.number} ${m.isAdmin ? '<span class="admin-badge">Admin</span>' : ''}</div><div class="member-actions"><button style="background:#f7c948;color:#111" onclick="muteMember('${m.id}')">🔇</button><button style="background:#ea4335;color:#fff" onclick="removeMember('${m.id}')">🚫</button></div></div>`).join('');
+      if (!list || !list.length) { el.innerHTML = '<div class="empty">Üye yok</div>'; return; }
+      const countEl = document.getElementById('memberCount');
+      if (countEl) countEl.textContent = `👥 ${list.length} üye`;
+      el.innerHTML = list.map(m => {
+        const displayName = m.name && m.name !== m.number ? m.name : '';
+        const phone = m.number ? `+${m.number}` : '';
+        const mutedStyle = m.isMuted ? 'opacity:0.5;' : '';
+        return `<div class="member-item" style="${mutedStyle}">
+          <div class="info" style="flex:1;">
+            <div style="font-size:13px;color:#e9edef;">${displayName || phone} ${m.isAdmin ? '<span class="admin-badge">Admin</span>' : ''} ${m.isMuted ? '🔇' : ''}</div>
+            ${displayName ? `<div style="font-size:11px;color:#53bdeb;">${phone}</div>` : ''}
+          </div>
+          <div class="member-actions">
+            <button style="background:${m.isMuted ? '#2a3942' : '#f7c948'};color:#111;border:none;border-radius:6px;padding:6px 10px;cursor:pointer;" onclick="muteMember('${m.id}')">${m.isMuted ? '🔊' : '🔇'}</button>
+            <button style="background:#ea4335;color:#fff;border:none;border-radius:6px;padding:6px 10px;cursor:pointer;" onclick="removeMember('${m.id}')">🚫</button>
+          </div>
+        </div>`;
+      }).join('');
     }
 
     function searchMembers() {
       const q = document.getElementById('memberSearch').value.toLowerCase();
-      const filtered = members.filter(m => (m.name || m.number).toLowerCase().includes(q));
+      const filtered = members.filter(m =>
+        (m.name || '').toLowerCase().includes(q) ||
+        (m.number || '').includes(q)
+      );
       renderMembers(filtered);
     }
 
