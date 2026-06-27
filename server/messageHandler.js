@@ -183,7 +183,7 @@ async function kuralFiyatsizResim({ sock, chatId, msg, userId, userName, userPho
         userId: delUserId,
         grupId: delChatId,
         grup: delGroupName,
-        mesaj: delText || '(Resimli ilan)',
+        mesaj: delText || '',
         sebep: 'Fiyatsız ilan (otomatik)',
         topluAdet: 1,
         medyaData: mediaInfo ? mediaInfo.data : null,

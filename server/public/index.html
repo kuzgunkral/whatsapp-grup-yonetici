@@ -366,7 +366,7 @@
     }
 
     async function sendRules() { if (!activeGroupId) { alert('Grup seçin'); return; } await fetch(API + '/api/send-rules', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({groupId: activeGroupId}) }); alert('Kurallar gönderildi'); }
-    async function cleanNoPrice() { if (!activeGroupId) { alert('Grup seçin'); return; } const r = await fetch(API + '/api/clean-no-price', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({groupId: activeGroupId}) }); const d = await r.json(); alert(d.message || d.count + ' ilan silindi'); }
+    async function cleanNoPrice() { if (!activeGroupId) { alert('Grup seçin'); return; } const r = await fetch(API + '/api/clean-no-price', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({groupId: activeGroupId}) }); const d = await r.json(); alert(d.message || ((d.count ?? d.deleted ?? 0) + ' ilan silindi')); }
     async function closeGroup() { if (!activeGroupId) return; await fetch(API + '/api/close-group', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({groupId: activeGroupId}) }); alert('Grup kapatıldı'); }
     async function openGroup() { if (!activeGroupId) return; await fetch(API + '/api/open-group', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({groupId: activeGroupId}) }); alert('Grup açıldı'); }
     async function pauseGroup() {
