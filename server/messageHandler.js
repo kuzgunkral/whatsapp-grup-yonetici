@@ -89,6 +89,27 @@ async function kural5dkLimit({ sock, chatId, realUserId, groupName, msg, userId,
       const tryDel = async (a) => { try { await sock.sendMessage(chatId, { delete: delKey }); } catch(e) { if (a < 20) setTimeout(() => tryDel(a+1), 3000); } };
       tryDel(1);
       stats.messagesDeleted++;
+      console.log(`🗑️ [5DK-SİL] user=${realUserId} group=${groupName} msg="${(msgText||'').substring(0,40)}"`);
+      deletedAdsLog.unshift({
+        id: Date.now().toString(),
+        tarih: new Date().toLocaleDateString('tr-TR'),
+        saat: new Date().toLocaleTimeString('tr-TR'),
+        timestamp: new Date().toISOString(),
+        kullanici: msg.pushName || realUserId.split('@')[0],
+        telefon: realUserId.split('@')[0],
+        userId: realUserId,
+        grupId: chatId,
+        grup: groupName,
+        mesaj: msgText || '(ilan)',
+        sebep: '5dk spam',
+        topluAdet: 1,
+        medyaData: null,
+        medyaMimetype: null
+      });
+      if (deletedAdsLog.length > 500) deletedAdsLog.splice(500);
+      saveDeletedLog();
+      io.emit('log', { type: 'deleted', user: msg.pushName || realUserId.split('@')[0], group: groupName });
+      io.emit('deleted_ads_updated', { total: deletedAdsLog.length });
       return 'deleted';
     }
   }
@@ -116,6 +137,27 @@ async function kural10Limit({ sock, chatId, realUserId, groupName, msg, userId, 
     const tryDel = async (a) => { try { await sock.sendMessage(chatId, { delete: delKey }); } catch(e) { if (a < 20) setTimeout(() => tryDel(a+1), 3000); } };
     tryDel(1);
     stats.messagesDeleted++;
+    console.log(`🗑️ [10RESİM-SİL] user=${realUserId} group=${groupName}`);
+    deletedAdsLog.unshift({
+      id: Date.now().toString(),
+      tarih: new Date().toLocaleDateString('tr-TR'),
+      saat: new Date().toLocaleTimeString('tr-TR'),
+      timestamp: new Date().toISOString(),
+      kullanici: msg.pushName || realUserId.split('@')[0],
+      telefon: realUserId.split('@')[0],
+      userId: realUserId,
+      grupId: chatId,
+      grup: groupName,
+      mesaj: '📷 [10+ resim spam]',
+      sebep: '10 resim limiti aşıldı',
+      topluAdet: 1,
+      medyaData: null,
+      medyaMimetype: null
+    });
+    if (deletedAdsLog.length > 500) deletedAdsLog.splice(500);
+    saveDeletedLog();
+    io.emit('log', { type: 'deleted', user: msg.pushName || realUserId.split('@')[0], group: groupName });
+    io.emit('deleted_ads_updated', { total: deletedAdsLog.length });
     return 'deleted';
   }
   return 'paid_ok'; // Fiyatlı, 10 veya altında → geç
@@ -150,9 +192,10 @@ async function kuralFiyatsizResim({ sock, chatId, msg, userId, userName, userPho
   try { mediaInfo = await downloadMediaMessage(msg); } catch(e) {}
 
   setTimeout(() => {
+    console.log('[LOG-DEBUG] setTimeout fired, delMsgId=' + delMsgId + ' muaf=' + reklamMuafMsgIds.has(delMsgId) + ' hasFiyat=' + hasFiyatMi(delText));
     if (reklamMuafMsgIds.has(delMsgId)) { reklamMuafMsgIds.delete(delMsgId); return; }
     // Caption'da fiyat varsa koru
-    if (hasFiyatMi(delText)) return;
+    if (hasFiyatMi(delText)) { console.log('[LOG-DEBUG] hasFiyat=true, SKIP LOG'); return; }
 
     const tryDel = async (a) => { try { await sock.sendMessage(delChatId, { delete: delKey }); } catch(e) { if (a < 20) setTimeout(() => tryDel(a+1), 3000); } };
     tryDel(1);
