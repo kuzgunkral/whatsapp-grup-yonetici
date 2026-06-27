@@ -592,15 +592,121 @@ app.post('/api/automation', (req, res) => {
   }
 });
 
-// ─── API: MUTE MEMBER ─────────────────────────────────────────────────────────
+// ─── API: MUTE / UNMUTE MEMBER ───────────────────────────────────────────────
 app.post('/api/mute-member', (req, res) => {
-  const { userId, action } = req.body;
-  if (action === 'mute') {
-    mutedUsers.add(userId);
+  const memberId = req.body.memberId || req.body.userId;
+  if (!memberId) return res.json({ success: false, error: 'memberId gerekli' });
+  const isMuted = mutedUsers.has(memberId);
+  if (isMuted) {
+    mutedUsers.delete(memberId);
+    res.json({ success: true, muted: false });
   } else {
-    mutedUsers.delete(userId);
+    mutedUsers.add(memberId);
+    res.json({ success: true, muted: true });
   }
-  res.json({ success: true, mutedUsers: [...mutedUsers] });
+});
+
+app.post('/api/unmute-member', (req, res) => {
+  const memberId = req.body.memberId || req.body.userId;
+  if (memberId) mutedUsers.delete(memberId);
+  res.json({ success: true });
+});
+
+// ─── API: REMOVE / BAN MEMBER ────────────────────────────────────────────────
+app.post('/api/remove-member', async (req, res) => {
+  if (!isReady) return res.json({ success: false, error: 'Bağlı değil' });
+  const groupId = req.body.groupId || activeGroupId;
+  const memberId = req.body.memberId || req.body.userId;
+  if (!groupId || !memberId) return res.json({ success: false, error: 'groupId ve memberId gerekli' });
+  try {
+    await sock.groupParticipantsUpdate(groupId, [memberId], 'remove');
+    res.json({ success: true });
+  } catch(e) { res.json({ success: false, error: e.message }); }
+});
+
+app.post('/api/ban-member', async (req, res) => {
+  if (!isReady) return res.json({ success: false, error: 'Bağlı değil' });
+  const groupId = req.body.groupId || activeGroupId;
+  const memberId = req.body.memberId || req.body.userId;
+  if (!groupId || !memberId) return res.json({ success: false, error: 'groupId ve memberId gerekli' });
+  try {
+    await sock.groupParticipantsUpdate(groupId, [memberId], 'remove');
+    res.json({ success: true });
+  } catch(e) { res.json({ success: false, error: e.message }); }
+});
+
+// ─── API: CLOSE / OPEN GROUP ─────────────────────────────────────────────────
+app.post('/api/close-group', async (req, res) => {
+  if (!isReady) return res.json({ success: false, error: 'Bağlı değil' });
+  const groupId = req.body.groupId || activeGroupId;
+  if (!groupId) return res.json({ success: false, error: 'Grup yok' });
+  try {
+    await sock.groupSettingUpdate(groupId, 'announcement');
+    res.json({ success: true });
+  } catch(e) { res.json({ success: false, error: e.message }); }
+});
+
+app.post('/api/open-group', async (req, res) => {
+  if (!isReady) return res.json({ success: false, error: 'Bağlı değil' });
+  const groupId = req.body.groupId || activeGroupId;
+  if (!groupId) return res.json({ success: false, error: 'Grup yok' });
+  try {
+    await sock.groupSettingUpdate(groupId, 'not_announcement');
+    res.json({ success: true });
+  } catch(e) { res.json({ success: false, error: e.message }); }
+});
+
+// ─── API: PAUSE GROUP (toggle) ────────────────────────────────────────────────
+app.post('/api/pause-group', (req, res) => {
+  const groupId = req.body.groupId || activeGroupId;
+  if (!groupId) return res.json({ success: false, error: 'Grup yok' });
+  if (pausedGroups.has(groupId)) {
+    pausedGroups.delete(groupId);
+    res.json({ success: true, paused: false });
+  } else {
+    pausedGroups.add(groupId);
+    res.json({ success: true, paused: true });
+  }
+});
+
+// ─── API: SET GROUP DESCRIPTION ──────────────────────────────────────────────
+app.post('/api/set-group-description', async (req, res) => {
+  if (!isReady) return res.json({ success: false, error: 'Bağlı değil' });
+  const groupId = req.body.groupId || activeGroupId;
+  const { description } = req.body;
+  if (!groupId) return res.json({ success: false, error: 'Grup yok' });
+  try {
+    await sock.groupUpdateDescription(groupId, description || '');
+    res.json({ success: true });
+  } catch(e) { res.json({ success: false, error: e.message }); }
+});
+
+// ─── API: PIN MESSAGE ─────────────────────────────────────────────────────────
+app.post('/api/pin-message', async (req, res) => {
+  if (!isReady) return res.json({ success: false, error: 'Bağlı değil' });
+  const groupId = req.body.groupId || activeGroupId;
+  const { messageId } = req.body;
+  if (!groupId || !messageId) return res.json({ success: false, error: 'groupId ve messageId gerekli' });
+  try {
+    await sock.sendMessage(groupId, { pin: { type: 1, time: 604800 } }, { quoted: { key: { id: messageId, remoteJid: groupId } } });
+    res.json({ success: true });
+  } catch(e) { res.json({ success: false, error: e.message }); }
+});
+
+// ─── API: GET RULE MESSAGE ────────────────────────────────────────────────────
+app.get('/api/get-rule-message', (req, res) => {
+  res.json({ message: config.customRuleMessage || null });
+});
+
+// ─── API: CLEAR MEDIA CACHE ───────────────────────────────────────────────────
+app.post('/api/clear-media-cache', (req, res) => {
+  let cleared = 0;
+  deletedAdsLog.forEach(e => {
+    if (e.medyaData) { e.medyaData = null; cleared++; }
+    if (e.medyaListesi) { e.medyaListesi.forEach(m => { m.data = null; }); }
+  });
+  saveDeletedLog();
+  res.json({ success: true, cleared });
 });
 
 // ─── API: DELETED ADS ─────────────────────────────────────────────────────────
