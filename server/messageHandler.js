@@ -25,7 +25,7 @@ function hasFiyatMi(text) {
 
 // ─── KURAL 1: 5 DAKİKADA 1 İLAN LİMİTİ ──────────────────────────────────────
 // Aynı kullanıcı 5dk içinde 2. ilan atarsa sil + DM uyarı (1 saatte 1 kez)
-async function kural5dkLimit({ sock, chatId, realUserId, groupName, msg, userId, msgText, hasFiyat, spamTracker, stats, getDeleteKey, config, deletedAdsLog, saveDeletedLog, io }) {
+async function kural5dkLimit({ sock, chatId, realUserId, groupName, msg, userId, msgText, hasFiyat, spamTracker, stats, getDeleteKey, config, deletedAdsLog, saveDeletedLog, io, downloadMediaMessage }) {
   const now = Date.now();
   const ONE_HOUR = 24 * 60 * 60 * 1000; // 24 saatte 1 DM uyarı
   const FIVE_MIN = (config.adIntervalMin || 5) * 60 * 1000;
@@ -100,6 +100,32 @@ async function kural5dkLimit({ sock, chatId, realUserId, groupName, msg, userId,
       tryDel(1);
       stats.messagesDeleted++;
       console.log(`🗑️ [5DK-SİL] user=${realUserId} group=${groupName} msg="${(msgText||'').substring(0,40)}"`);
+
+      // Medyayı indir (geri yükleme için)
+      let mediaInfo5dk = null;
+      if (msg.message?.imageMessage || msg.message?.videoMessage) {
+        try { if (downloadMediaMessage) mediaInfo5dk = await downloadMediaMessage(msg); } catch(e) {}
+      }
+
+      // 60sn içinde aynı kullanıcıdan gelen → mevcut log'a birleştir
+      const existing5dk = deletedAdsLog.find(l =>
+        l.grupId === chatId &&
+        (Date.now() - new Date(l.timestamp).getTime() < 60000) &&
+        (l.userId === realUserId || l.telefon === realUserId.split('@')[0])
+      );
+      if (existing5dk) {
+        existing5dk.topluAdet = (existing5dk.topluAdet || 1) + 1;
+        if (msgText) existing5dk.mesaj = msgText.substring(0, 100);
+        if (mediaInfo5dk) {
+          if (!existing5dk.medyaListesi) existing5dk.medyaListesi = [];
+          existing5dk.medyaListesi.push({ data: mediaInfo5dk.data, mimetype: mediaInfo5dk.mimetype, caption: msgText || '' });
+          if (!existing5dk.medyaData) { existing5dk.medyaData = mediaInfo5dk.data; existing5dk.medyaMimetype = mediaInfo5dk.mimetype; }
+        }
+        saveDeletedLog();
+        io.emit('deleted_ads_updated', { total: deletedAdsLog.length });
+        return 'deleted';
+      }
+
       deletedAdsLog.unshift({
         id: Date.now().toString(),
         tarih: new Date().toLocaleDateString('tr-TR'),
@@ -113,8 +139,9 @@ async function kural5dkLimit({ sock, chatId, realUserId, groupName, msg, userId,
         mesaj: msgText || '(ilan)',
         sebep: '5dk spam',
         topluAdet: 1,
-        medyaData: null,
-        medyaMimetype: null
+        medyaData: mediaInfo5dk ? mediaInfo5dk.data : null,
+        medyaMimetype: mediaInfo5dk ? mediaInfo5dk.mimetype : null,
+        medyaListesi: mediaInfo5dk ? [{ data: mediaInfo5dk.data, mimetype: mediaInfo5dk.mimetype, caption: msgText || '' }] : []
       });
       if (deletedAdsLog.length > 500) deletedAdsLog.splice(500);
       saveDeletedLog();
@@ -148,6 +175,31 @@ async function kural10Limit({ sock, chatId, realUserId, groupName, msg, userId, 
     tryDel(1);
     stats.messagesDeleted++;
     console.log(`🗑️ [10RESİM-SİL] user=${realUserId} group=${groupName}`);
+
+    // Medyayı indir
+    let mediaInfo10 = null;
+    if (msg.message?.imageMessage || msg.message?.videoMessage) {
+      try { if (downloadMediaMessage) mediaInfo10 = await downloadMediaMessage(msg); } catch(e) {}
+    }
+
+    // 60sn içinde aynı kullanıcıdan gelen → mevcut log'a birleştir
+    const existing10 = deletedAdsLog.find(l =>
+      l.grupId === chatId &&
+      (Date.now() - new Date(l.timestamp).getTime() < 60000) &&
+      (l.userId === realUserId || l.telefon === realUserId.split('@')[0])
+    );
+    if (existing10) {
+      existing10.topluAdet = (existing10.topluAdet || 1) + 1;
+      if (mediaInfo10) {
+        if (!existing10.medyaListesi) existing10.medyaListesi = [];
+        existing10.medyaListesi.push({ data: mediaInfo10.data, mimetype: mediaInfo10.mimetype, caption: '' });
+        if (!existing10.medyaData) { existing10.medyaData = mediaInfo10.data; existing10.medyaMimetype = mediaInfo10.mimetype; }
+      }
+      saveDeletedLog();
+      io.emit('deleted_ads_updated', { total: deletedAdsLog.length });
+      return 'deleted';
+    }
+
     deletedAdsLog.unshift({
       id: Date.now().toString(),
       tarih: new Date().toLocaleDateString('tr-TR'),
@@ -161,8 +213,9 @@ async function kural10Limit({ sock, chatId, realUserId, groupName, msg, userId, 
       mesaj: '📷 [10+ resim spam]',
       sebep: '10 resim limiti aşıldı',
       topluAdet: 1,
-      medyaData: null,
-      medyaMimetype: null
+      medyaData: mediaInfo10 ? mediaInfo10.data : null,
+      medyaMimetype: mediaInfo10 ? mediaInfo10.mimetype : null,
+      medyaListesi: mediaInfo10 ? [{ data: mediaInfo10.data, mimetype: mediaInfo10.mimetype, caption: '' }] : []
     });
     if (deletedAdsLog.length > 500) deletedAdsLog.splice(500);
     saveDeletedLog();
