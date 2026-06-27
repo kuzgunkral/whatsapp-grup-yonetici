@@ -83,7 +83,22 @@ function loadDeletedLog() {
   }
 }
 function saveDeletedLog() { try { fs.writeFileSync(LOG_FILE, JSON.stringify(deletedAdsLog), 'utf8'); } catch(e) {} }
-function loadConfig() { try { if (fs.existsSync(CONFIG_FILE)) config = { ...config, ...JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8')) }; } catch(e) {} }
+function loadConfig() {
+  try {
+    if (fs.existsSync(CONFIG_FILE)) {
+      const saved = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
+      // Shallow alanları merge et, automation nested objesini ayrı merge et
+      config = {
+        ...config,
+        ...saved,
+        automation: {
+          ...config.automation,
+          ...(saved.automation || {})
+        }
+      };
+    }
+  } catch(e) { console.error('Config okunamadı:', e.message); }
+}
 function saveConfig() { try { fs.writeFileSync(CONFIG_FILE, JSON.stringify(config), 'utf8'); } catch(e) {} }
 
 // Startup'ta log ve config yükle
@@ -815,8 +830,7 @@ setInterval(() => { io.emit('stats', stats); }, 10000);
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
   console.log(`✅ Server ${PORT} portunda çalışıyor`);
-  loadDeletedLog();
-  loadConfig();
+  // loadDeletedLog() ve loadConfig() startup'ta (satır 90-91) zaten çağrıldı
   scheduleRuleReminder();
   connect().catch(e => console.error('Initial connect error:', e.message));
 });
