@@ -27,7 +27,7 @@ function hasFiyatMi(text) {
 // Aynı kullanıcı 5dk içinde 2. ilan atarsa sil + DM uyarı (1 saatte 1 kez)
 async function kural5dkLimit({ sock, chatId, realUserId, groupName, msg, userId, msgText, hasFiyat, spamTracker, stats, getDeleteKey, config }) {
   const now = Date.now();
-  const ONE_HOUR = 60 * 60 * 1000;
+  const ONE_HOUR = 24 * 60 * 60 * 1000; // 24 saatte 1 DM uyarı
   const FIVE_MIN = (config.adIntervalMin || 5) * 60 * 1000;
 
   if (!spamTracker[userId]) {
@@ -71,14 +71,19 @@ async function kural5dkLimit({ sock, chatId, realUserId, groupName, msg, userId,
       t.adCount = 1;
       t.firstAdTime = now;
       t.count = 1;
-      // hasPaid zaten set edildi — bu resim aşağıdaki kural10'a düşer
       return 'new_period';
     } else {
       t.adCount++;
       if (!t.ozelUyari || (now - t.ozelUyariTime > ONE_HOUR)) {
         t.ozelUyari = true;
         t.ozelUyariTime = now;
-        try { await sock.sendMessage(realUserId, { text: `⚠️ ${config.adIntervalMin || 5} dakikada 1 ilan atabilirsiniz. Lütfen bekleyiniz.\n\n🛡️ _${groupName} Yönetimi_` }); } catch(e) {}
+        // 24 saatte 1 kez — grup içinde @mention uyarı (DM değil)
+        try {
+          await sock.sendMessage(chatId, {
+            text: `⚠️ @${realUserId.split('@')[0]} ${config.adIntervalMin || 5} dakikada 1 ilan atabilirsiniz. Lütfen bekleyiniz.\n\n🛡️ _${groupName} Yönetimi_`,
+            mentions: [realUserId]
+          });
+        } catch(e) {}
       }
       const delKey = getDeleteKey(msg);
       const tryDel = async (a) => { try { await sock.sendMessage(chatId, { delete: delKey }); } catch(e) { if (a < 20) setTimeout(() => tryDel(a+1), 3000); } };
@@ -99,7 +104,13 @@ async function kural10Limit({ sock, chatId, realUserId, groupName, msg, userId, 
     if (!t.warned10) {
       t.warned10 = true;
       t.warned10Time = Date.now();
-      try { await sock.sendMessage(realUserId, { text: `⚠️ Tek seferde 10 adetten fazla resim yükleyemezsiniz.\n\n🛡️ _${groupName} Yönetimi_` }); } catch(e) {}
+      // 24 saatte 1 kez — grup içinde @mention uyarı
+      try {
+        await sock.sendMessage(chatId, {
+          text: `⚠️ @${realUserId.split('@')[0]} Tek seferde 10 adetten fazla resim yükleyemezsiniz.\n\n🛡️ _${groupName} Yönetimi_`,
+          mentions: [realUserId]
+        });
+      } catch(e) {}
     }
     const delKey = getDeleteKey(msg);
     const tryDel = async (a) => { try { await sock.sendMessage(chatId, { delete: delKey }); } catch(e) { if (a < 20) setTimeout(() => tryDel(a+1), 3000); } };
@@ -228,10 +239,15 @@ async function kuralFiyatsizMetin({ sock, chatId, realUserId, groupName, msg, us
     return 'deleted';
   }
 
-  // 1. kez: DM uyarı + config.deleteDelay sonra sil
+  // 1. kez: grup içinde @mention uyarı (DM değil)
   quota.warned = true;
   quota.warnedTime = Date.now();
-  try { await sock.sendMessage(realUserId, { text: `⚠️ İlanınıza fiyat girmediniz. ${Math.round((config.deleteDelay || 60000) / 1000)} saniye içerisinde silinecektir.\nLütfen fiyat girerek tekrar gönderiniz.\n\n🛡️ _${groupName} Yönetimi_` }); } catch(e) {}
+  try {
+    await sock.sendMessage(chatId, {
+      text: `⚠️ @${realUserId.split('@')[0]} İlanınıza fiyat girmediniz. ${Math.round((config.deleteDelay || 60000) / 1000)} saniye içerisinde silinecektir.\nLütfen fiyat girerek tekrar gönderiniz.\n\n🛡️ _${groupName} Yönetimi_`,
+      mentions: [realUserId]
+    });
+  } catch(e) {}
 
   let mediaInfo3 = null;
   try { if (hasMedia) mediaInfo3 = await downloadMediaMessage(msg); } catch(e) {}
