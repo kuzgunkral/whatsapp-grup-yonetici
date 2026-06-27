@@ -387,8 +387,9 @@
       if (!activeGroupId) { alert('Grup seçin'); return; }
       const msg = document.getElementById('msgText').value.trim();
       if (!msg) return;
-      // WhatsApp ~metin~ = üstü çizili format
-      await fetch(API + '/api/send-message', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({groupId: activeGroupId, message: `~${msg}~`}) });
+      // Mesajın altına ve üstüne çizgi ekle
+      const formatted = `━━━━━━━━━━━━━━━━\n${msg}\n━━━━━━━━━━━━━━━━`;
+      await fetch(API + '/api/send-message', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({groupId: activeGroupId, message: formatted}) });
       document.getElementById('msgText').value = '';
       alert('Gönderildi');
     }
