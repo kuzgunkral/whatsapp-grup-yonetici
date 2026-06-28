@@ -754,22 +754,20 @@ app.post('/api/restore-ad', async (req, res) => {
     // null data'lı resimleri filtrele (clear-media-cache sonrası olabilir)
     const validMedia = (ad.medyaListesi || []).filter(m => m && m.data);
     if (validMedia.length > 0) {
-      // İlk resme caption (placeholder değilse), diğerlerine boş — toplu gibi görünsün
-      const realCaption = (ad.mesaj && ad.mesaj !== '(Resimli ilan)') ? ad.mesaj : '';
+      // Caption yok — sade resim gönder
       for (let i = 0; i < validMedia.length; i++) {
         const m = validMedia[i];
         const buf = Buffer.from(m.data, 'base64');
-        const caption = i === 0 ? realCaption : '';
-        await sock.sendMessage(target, { image: buf, caption });
+        await sock.sendMessage(target, { image: buf, caption: '' });
         if (i < validMedia.length - 1) await new Promise(r => setTimeout(r, 200));
       }
     } else if (ad.medyaData) {
       const buf = Buffer.from(ad.medyaData, 'base64');
       const isVideo = ad.medyaMimetype && ad.medyaMimetype.startsWith('video');
       if (isVideo) {
-        await sock.sendMessage(target, { video: buf, caption: ad.mesaj || '' });
+        await sock.sendMessage(target, { video: buf, caption: '' });
       } else {
-        await sock.sendMessage(target, { image: buf, caption: ad.mesaj || '' });
+        await sock.sendMessage(target, { image: buf, caption: '' });
       }
     } else if (ad.mesaj) {
       await sock.sendMessage(target, { text: ad.mesaj });
@@ -793,21 +791,20 @@ app.post('/api/restore-as-ad', async (req, res) => {
   try {
     const target = groupId || activeGroupId;
     if (!target) return res.json({ success: false, error: 'Hedef grup yok' });
-    const adText = `📢 *Reklam İlan*\n\n${ad.mesaj || ''}\n\n📱 Kişi: ${ad.kullanici || ad.telefon}\n🛡️ _Grup Yönetimi_`;
     if (ad.medyaListesi && ad.medyaListesi.length > 0) {
-      // Tüm resimleri gönder — ilki caption'lı, geri kalanlar sade
+      // Caption yok — sade resim gönder
       for (let i = 0; i < ad.medyaListesi.length; i++) {
         const m = ad.medyaListesi[i];
+        if (!m || !m.data) continue;
         const buf = Buffer.from(m.data, 'base64');
-        const caption = i === 0 ? adText : '';
-        await sock.sendMessage(target, { image: buf, caption });
+        await sock.sendMessage(target, { image: buf, caption: '' });
         if (i < ad.medyaListesi.length - 1) await new Promise(r => setTimeout(r, 300));
       }
     } else if (ad.medyaData) {
       const buf = Buffer.from(ad.medyaData, 'base64');
-      await sock.sendMessage(target, { image: buf, caption: adText });
-    } else {
-      await sock.sendMessage(target, { text: adText });
+      await sock.sendMessage(target, { image: buf, caption: '' });
+    } else if (ad.mesaj) {
+      await sock.sendMessage(target, { text: ad.mesaj });
     }
     // Reklam olarak yüklenen logu listeden kaldır
     deletedAdsLog = deletedAdsLog.filter(a => a.id !== lookupId);
