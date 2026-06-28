@@ -412,6 +412,44 @@ async function handleMessage(msg) {
 
     // ── Resim ilanı ──
     if (hasMedia) {
+      const WAIT_MS_CFG = (config.photoWaitSec || 30) * 1000;
+      const POST_WARN_GRACE = 3000;
+      const st = spamTracker[userId];
+
+      // Kural 1'de 10 bırakıldıktan 3sn geçtiyse → tüm kurallardan bağımsız, direkt 30sn bekle
+      if (st && st.warn10Time && Date.now() - st.warn10Time > POST_WARN_GRACE) {
+        const delKey = getDeleteKey(msg);
+        const delMsgId = msg.key.id;
+        const delText = msgText;
+        const delUserId = userId;
+        const delChatId = chatId;
+        const delGroupName = groupName;
+        const delUserPhone = userPhone;
+        const delUserName = userName;
+        setTimeout(async () => {
+          if (hasFiyatMi(delText)) return;
+          const tryDel = async (a) => { try { await sock.sendMessage(delChatId, { delete: delKey }); } catch(e) { if (a < 3) setTimeout(() => tryDel(a+1), 5000); } };
+          tryDel(1);
+          stats.messagesDeleted++;
+          console.log(`🗑️ [POST-WARN-30SN] user=${delUserId} caption="${(delText||'').substring(0,30)}"`);
+          deletedAdsLog.unshift({
+            id: Date.now().toString(),
+            tarih: new Date().toLocaleDateString('tr-TR'),
+            saat: new Date().toLocaleTimeString('tr-TR'),
+            timestamp: new Date().toISOString(),
+            kullanici: delUserName || delUserPhone, telefon: delUserPhone, userId: delUserId,
+            grupId: delChatId, grup: delGroupName, mesaj: delText || '',
+            sebep: 'Fiyatsız resim (10 sonrası 30sn)', topluAdet: 1,
+            medyaData: null, medyaMimetype: null, medyaListesi: []
+          });
+          if (deletedAdsLog.length > 500) deletedAdsLog.splice(500);
+          saveDeletedLog();
+          io.emit('log', { type: 'deleted', user: delUserName || delUserPhone, group: delGroupName });
+          io.emit('deleted_ads_updated', { total: deletedAdsLog.length });
+        }, WAIT_MS_CFG);
+        return;
+      }
+
       // KURAL 3: Her resimde önce kontrol edilir.
       // Sadece Kural 2 muafiyeti bittikten sonra aktif olur.
       const res3 = await kural3Check({ sock, chatId, realUserId, msg, userId, userName, userPhone, groupName, msgText, stats, deletedAdsLog, saveDeletedLog, io, getDeleteKey, downloadMediaMessage, config });
