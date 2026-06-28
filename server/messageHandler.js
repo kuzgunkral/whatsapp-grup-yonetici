@@ -87,20 +87,6 @@ async function kuralResim({
     tryDel(1);
     stats.messagesDeleted++;
     console.log(`🗑️ [K1-10+] user=${userId} count=${t.imgCount}`);
-    deletedAdsLog.unshift({
-      id: Date.now().toString(),
-      tarih: new Date().toLocaleDateString('tr-TR'),
-      saat: new Date().toLocaleTimeString('tr-TR'),
-      timestamp: new Date().toISOString(),
-      kullanici: userName || userPhone, telefon: userPhone, userId,
-      grupId: chatId, grup: groupName, mesaj: msgText || '',
-      sebep: '10+ resim (anında silindi)', topluAdet: 1,
-      medyaData: null, medyaMimetype: null, medyaListesi: []
-    });
-    if (deletedAdsLog.length > 500) deletedAdsLog.splice(500);
-    saveDeletedLog();
-    io.emit('log', { type: 'deleted', user: userName || userPhone, group: groupName });
-    io.emit('deleted_ads_updated', { total: deletedAdsLog.length });
     return 'deleted';
   }
 
@@ -189,23 +175,6 @@ async function kural3Check({
   tryDel(1);
   stats.messagesDeleted++;
   console.log(`🗑️ [K3-5DK] user=${userId}`);
-  let mediaInfo = null;
-  try { mediaInfo = await downloadMediaMessage(msg); } catch(e) {}
-  deletedAdsLog.unshift({
-    id: Date.now().toString(),
-    tarih: new Date().toLocaleDateString('tr-TR'),
-    saat: new Date().toLocaleTimeString('tr-TR'),
-    timestamp: new Date().toISOString(),
-    kullanici: userName || userPhone, telefon: userPhone, userId,
-    grupId: chatId, grup: groupName, mesaj: msgText || '',
-    sebep: '5dk spam (fiyatlı ilan sonrası)', topluAdet: 1,
-    medyaData: mediaInfo?.data || null, medyaMimetype: mediaInfo?.mimetype || null,
-    medyaListesi: mediaInfo ? [{ data: mediaInfo.data, mimetype: mediaInfo.mimetype, caption: msgText || '' }] : []
-  });
-  if (deletedAdsLog.length > 500) deletedAdsLog.splice(500);
-  saveDeletedLog();
-  io.emit('log', { type: 'deleted', user: userName || userPhone, group: groupName });
-  io.emit('deleted_ads_updated', { total: deletedAdsLog.length });
   return 'deleted';
 }
 
@@ -256,20 +225,6 @@ async function kuralFiyatliResim({
     stats.messagesDeleted++;
     console.log(`🗑️ [K2-10+] user=${userId} count=${ft.count}`);
     if (typeof onWarn10 === 'function') onWarn10(userId);
-    deletedAdsLog.unshift({
-      id: Date.now().toString(),
-      tarih: new Date().toLocaleDateString('tr-TR'),
-      saat: new Date().toLocaleTimeString('tr-TR'),
-      timestamp: new Date().toISOString(),
-      kullanici: userName || userPhone, telefon: userPhone, userId,
-      grupId: chatId, grup: groupName, mesaj: msgText || '',
-      sebep: 'Fiyatlı resim 10+ (anında silindi)', topluAdet: 1,
-      medyaData: null, medyaMimetype: null, medyaListesi: []
-    });
-    if (deletedAdsLog.length > 500) deletedAdsLog.splice(500);
-    saveDeletedLog();
-    io.emit('log', { type: 'deleted', user: userName || userPhone, group: groupName });
-    io.emit('deleted_ads_updated', { total: deletedAdsLog.length });
     return 'deleted';
   }
 
