@@ -371,9 +371,6 @@ async function handleMessage(msg) {
 
     if (!config.automation.noPrice) return;
 
-    // Bot'un kendi gönderdiği mesajlara kural uygulanmaz
-    if (isFromMe) return;
-
     const msgLower = msgText.toLowerCase();
     const hasFiyat = hasFiyatMi(msgText);
 
