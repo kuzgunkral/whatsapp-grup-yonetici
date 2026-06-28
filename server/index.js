@@ -418,12 +418,14 @@ async function handleMessage(msg) {
 
       if (hasFiyat) {
         // KURAL 2: Fiyatlı toplu resim — kural 1 ile ayrı tracker
+        // NOT: kural3SetPaidTime burada ÇAĞRILMIYOR — kuralFiyatliResim içinde
+        // tracker temizlenince (WAIT_MS+1000 sonra) set edilecek, böylece toplu
+        // gönderimin ortasında kural3 devreye girip resimleri silmez.
         await kuralFiyatliResim({
           sock, chatId, realUserId, msg, userId, userName, userPhone, groupName, msgText,
-          spamTracker, stats, reklamMuafMsgIds, deletedAdsLog, saveDeletedLog, io, getDeleteKey, downloadMediaMessage, config
+          spamTracker, stats, reklamMuafMsgIds, deletedAdsLog, saveDeletedLog, io, getDeleteKey,
+          downloadMediaMessage, config, kural3SetPaidTime
         });
-        // Fiyatlı resim muaf olduktan sonra paidTime set et (kural 3 için)
-        kural3SetPaidTime(userId);
       } else {
         // KURAL 1: Fiyatsız toplu resim
         await kuralResim({
