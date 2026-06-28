@@ -227,7 +227,7 @@ async function kuralFiyatliResim({ sock, chatId, realUserId, msg, userId, userNa
   const ONE_HOUR = 60 * 60 * 1000;
 
   // Fiyatlı resim tracker — bu kullanıcı için yeni toplu gönderim başlat veya devam et
-  if (!fiyatliResimTracker[userId]) fiyatliResimTracker[userId] = { count: 0, hasFiyat: false, pendingMsgs: [], warn10Time: 0 };
+  if (!fiyatliResimTracker[userId]) fiyatliResimTracker[userId] = { count: 0, hasFiyat: false, pendingMsgs: [], warn10Time: 0, cleanupScheduled: false };
   const ft = fiyatliResimTracker[userId];
   ft.count++;
   if (hasFiyatMi(msgText)) ft.hasFiyat = true;
@@ -324,15 +324,18 @@ async function kuralFiyatliResim({ sock, chatId, realUserId, msg, userId, userNa
     io.emit('deleted_ads_updated', { total: deletedAdsLog.length });
   }, WAIT_MS);
 
-  // WAIT_MS+1sn sonra tracker temizle ve kural3 paidTime'ı SET ET
-  // (toplu gönderim penceresi kapandıktan sonra — önceden set edilirse kural3
-  //  aynı toplu gönderimin resimlerini siler)
-  setTimeout(() => {
-    if (fiyatliResimTracker[delUserId] && fiyatliResimTracker[delUserId].hasFiyat) {
-      if (typeof kural3SetPaidTime === 'function') kural3SetPaidTime(delUserId);
-    }
-    delete fiyatliResimTracker[delUserId];
-  }, WAIT_MS + 1000);
+  // Cleanup timer sadece 1 kez planlanır — her resim için ayrı timer açılmasın.
+  // İlk timer tracker'ı silerdi, sonraki resimler hasFiyat göremezdi → hepsi silinirdi.
+  if (!ft.cleanupScheduled) {
+    ft.cleanupScheduled = true;
+    setTimeout(() => {
+      const tracker = fiyatliResimTracker[delUserId];
+      if (tracker && tracker.hasFiyat) {
+        if (typeof kural3SetPaidTime === 'function') kural3SetPaidTime(delUserId);
+      }
+      delete fiyatliResimTracker[delUserId];
+    }, WAIT_MS + 1000);
+  }
 
   return 'waiting';
 }
