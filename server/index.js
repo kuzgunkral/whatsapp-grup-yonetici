@@ -416,8 +416,9 @@ async function handleMessage(msg) {
       const POST_WARN_GRACE = 3000;
       const st = spamTracker[userId];
 
-      // Kural 1'de 10 bırakıldıktan 3sn geçtiyse → tüm kurallardan bağımsız, direkt 30sn bekle
-      if (st && st.warn10Time && Date.now() - st.warn10Time > POST_WARN_GRACE) {
+      // Kural 1'de 10 bırakıldıktan 3sn sonra gelen FIYATSIZ resimler → tüm kurallardan bağımsız, direkt 30sn bekle
+      // Fiyatlı resimler bu path'e girmez → normal Kural 2'ye gider
+      if (!hasFiyat && st && st.warn10Time && Date.now() - st.warn10Time > POST_WARN_GRACE) {
         const delKey = getDeleteKey(msg);
         const delMsgId = msg.key.id;
         const delText = msgText;

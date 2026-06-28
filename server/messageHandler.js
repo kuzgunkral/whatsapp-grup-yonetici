@@ -274,7 +274,7 @@ async function kuralFiyatliResim({
     return 'deleted';
   }
 
-  // ≤10 → WAIT_MS bekle, sonra karar ver (lazy medya)
+  // ≤10 → WAIT_MS bekle, sonra karar ver
   const delKey = getDeleteKey(msg);
   const delMsgId = msg.key.id;
   const delText = msgText;
@@ -283,12 +283,15 @@ async function kuralFiyatliResim({
   const delGroupName = groupName;
   const delUserPhone = userPhone;
   const delUserName = userName;
+  // hasFiyat durumunu closure'da sabitle — tracker silinse bile doğru karar verilsin
+  const snapshotHasFiyat = ft.hasFiyat;
 
   setTimeout(async () => {
     if (reklamMuafMsgIds.has(delMsgId)) { reklamMuafMsgIds.delete(delMsgId); return; }
-    // Tracker hâlâ varsa ve hasFiyat=true → muaf tut
+    // Tracker hâlâ varsa hasFiyat'ı kontrol et, yoksa snapshot'a bak
     const tracker = fiyatliResimTracker[delUserId];
-    if (tracker && tracker.hasFiyat) {
+    const batchFiyatli = (tracker && tracker.hasFiyat) || snapshotHasFiyat;
+    if (batchFiyatli) {
       console.log(`[K2-MUAF] user=${delUserId} → koru`);
       return;
     }
@@ -315,7 +318,7 @@ async function kuralFiyatliResim({
     io.emit('deleted_ads_updated', { total: deletedAdsLog.length });
   }, WAIT_MS);
 
-  // Cleanup timer sadece 1 kez planlanır
+  // Cleanup timer sadece 1 kez planlanır — 30sn timeout'lardan SONRA çalışsın
   if (!ft.cleanupScheduled) {
     ft.cleanupScheduled = true;
     setTimeout(() => {
@@ -324,7 +327,7 @@ async function kuralFiyatliResim({
         if (typeof kural3SetPaidTime === 'function') kural3SetPaidTime(delUserId);
       }
       delete fiyatliResimTracker[delUserId];
-    }, WAIT_MS + 3000);
+    }, WAIT_MS + 5000);
   }
 
   return 'waiting';
