@@ -4,7 +4,7 @@
 
 import React, { useState, useEffect } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, FlatList, Alert, RefreshControl, TextInput,
+  View, Text, StyleSheet, TouchableOpacity, FlatList, Alert, RefreshControl, TextInput, Image, ScrollView,
 } from 'react-native';
 import botBridge from '../services/BotBridge';
 
@@ -95,8 +95,33 @@ const LogsScreen = () => {
         )}
         <Text style={styles.cardGroup}>📍 {item.grup}</Text>
         <Text style={styles.cardMsg} numberOfLines={3}>
-          {item.medya || item.medyaVar ? '📷 ' : ''}{item.mesaj || '(içerik yok)'}
+          {(item.medyaListesi && item.medyaListesi.length > 0) || item.medyaData || item.medya || item.medyaVar ? '📷 ' : ''}{item.mesaj || '(içerik yok)'}
         </Text>
+        {item.medyaListesi && item.medyaListesi.length > 0 && (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.mediaRow}>
+            {item.medyaListesi.map((m, idx) => (
+              m && m.data ? (
+                <Image
+                  key={idx}
+                  source={{ uri: `data:${m.mimetype || 'image/jpeg'};base64,${m.data}` }}
+                  style={styles.mediaThumbnail}
+                  resizeMode="cover"
+                />
+              ) : (
+                <View key={idx} style={styles.mediaThumbnailPlaceholder}>
+                  <Text style={styles.mediaThumbnailPlaceholderText}>📷</Text>
+                </View>
+              )
+            ))}
+          </ScrollView>
+        )}
+        {(!item.medyaListesi || item.medyaListesi.length === 0) && item.medyaData && (
+          <Image
+            source={{ uri: `data:${item.medyaMimetype || 'image/jpeg'};base64,${item.medyaData}` }}
+            style={[styles.mediaThumbnail, { marginTop: 6 }]}
+            resizeMode="cover"
+          />
+        )}
         <Text style={styles.cardReason}>⚡ {item.sebep}</Text>
         <View style={styles.cardActions}>
           <TouchableOpacity style={[styles.cardBtn, styles.cardBtnGreen]} onPress={() => handleRestore(item)}>
@@ -173,6 +198,10 @@ const styles = StyleSheet.create({
   emptyBox: { alignItems: 'center', paddingVertical: 60 },
   emptyIcon: { fontSize: 48, marginBottom: 12 },
   emptyText: { color: '#8696a0', fontSize: 16 },
+  mediaRow: { marginBottom: 8 },
+  mediaThumbnail: { width: 72, height: 72, borderRadius: 6, marginRight: 6, borderWidth: 1, borderColor: '#2a3942' },
+  mediaThumbnailPlaceholder: { width: 72, height: 72, borderRadius: 6, marginRight: 6, backgroundColor: '#2a3942', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#3b4a54' },
+  mediaThumbnailPlaceholderText: { fontSize: 28 },
 });
 
 export default LogsScreen;

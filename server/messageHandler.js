@@ -155,7 +155,7 @@ async function kural5dkLimit({ sock, chatId, realUserId, groupName, msg, userId,
 }
 
 // ─── KURAL 2: 10 RESİM LİMİTİ (fiyatlı ilanlar için) ───────────────────────
-async function kural10Limit({ sock, chatId, realUserId, groupName, msg, userId, spamTracker, stats, getDeleteKey, deletedAdsLog, saveDeletedLog, io }) {
+async function kural10Limit({ sock, chatId, realUserId, groupName, msg, userId, spamTracker, stats, getDeleteKey, deletedAdsLog, saveDeletedLog, io, downloadMediaMessage }) {
   const t = spamTracker[userId];
   if (!t || !t.hasPaid) return 'continue';
   if (t.count > 10) {
@@ -338,7 +338,8 @@ async function kuralFiyatsizMetin({ sock, chatId, realUserId, groupName, msg, us
       sebep: 'Fiyatsız ilan (sessiz)',
       topluAdet: 1,
       medyaData: mediaInfo2 ? mediaInfo2.data : null,
-      medyaMimetype: mediaInfo2 ? mediaInfo2.mimetype : null
+      medyaMimetype: mediaInfo2 ? mediaInfo2.mimetype : null,
+      medyaListesi: mediaInfo2 ? [{ data: mediaInfo2.data, mimetype: mediaInfo2.mimetype, caption: msgText || '' }] : []
     });
     if (deletedAdsLog.length > 500) deletedAdsLog.splice(500);
     saveDeletedLog();
