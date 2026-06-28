@@ -85,7 +85,11 @@ async function kural5dkLimit({ sock, chatId, realUserId, groupName, msg, userId,
   // Dönem aktifse count artır
   t.count++;
 
+  // 30sn içinde gelenler aynı toplu ilanın resimleri
+  const isPartOfFirst = t.firstAdTime > 0 && (now - t.firstAdTime < 30000);
+
   // Fiyatlı hak henüz kullanılmadıysa ve fiyatlı ilan geldi → koru (hak kullanıldı)
+  // isPartOfFirst kontrolü yok — 30sn içinde de fiyatlı hak kullanılabilir
   if (!t.hasPaid && hasFiyat) {
     t.hasPaid = true;
     t.paidTime = now;
@@ -94,14 +98,14 @@ async function kural5dkLimit({ sock, chatId, realUserId, groupName, msg, userId,
     return 'continue'; // Fiyatlı hak kullanıldı → koru
   }
 
-  // Fiyat varsa hasPaid işaretle
+  // Fiyat varsa hasPaid işaretle (zaten set edilmişse güncelle)
   if (hasFiyat) {
     t.hasPaid = true;
     t.paidTime = now;
   }
 
-  // Fiyatlı hak kullanıldıktan sonra 5dk içinde gelen her resim → sil (anında, 30sn bekleme yok)
-  if (t.hasPaid && t.firstAdTime > 0 && (now - t.firstAdTime < FIVE_MIN) && t.adCount >= 1) {
+  // 2. ilan — fiyatlı hak kullanıldıktan sonra 5dk içinde tekrar resim → sil
+  if (!isPartOfFirst && t.hasPaid && t.firstAdTime > 0 && (now - t.firstAdTime < FIVE_MIN) && t.adCount >= 1) {
     // Fiyatlı hak kullanıldı, 5dk içinde tekrar resim atıldı → sil
       if (!t.ozelUyari || (now - t.ozelUyariTime > ONE_HOUR)) {
         t.ozelUyari = true;
@@ -181,25 +185,6 @@ async function kural10Limit({ sock, chatId, realUserId, groupName, msg, userId, 
       try { if (downloadMediaMessage) mediaInfo10 = await downloadMediaMessage(msg); } catch(e) {}
     }
 
-    // Aynı toplu ilanın resimleri → son log kaydına bak (10sn penceresi)
-    const existing10 = deletedAdsLog.length > 0 &&
-      deletedAdsLog[0].grupId === chatId &&
-      deletedAdsLog[0].sebep === '10 resim limiti aşıldı' &&
-      (deletedAdsLog[0].userId === realUserId || deletedAdsLog[0].telefon === realUserId.split('@')[0]) &&
-      (Date.now() - new Date(deletedAdsLog[0].timestamp).getTime() < 10000)
-      ? deletedAdsLog[0] : null;
-    if (existing10) {
-      existing10.topluAdet = (existing10.topluAdet || 1) + 1;
-      if (mediaInfo10) {
-        if (!existing10.medyaListesi) existing10.medyaListesi = [];
-        existing10.medyaListesi.push({ data: mediaInfo10.data, mimetype: mediaInfo10.mimetype, caption: '' });
-        if (!existing10.medyaData) { existing10.medyaData = mediaInfo10.data; existing10.medyaMimetype = mediaInfo10.mimetype; }
-      }
-      saveDeletedLog();
-      io.emit('deleted_ads_updated', { total: deletedAdsLog.length });
-      return 'deleted';
-    }
-
     deletedAdsLog.unshift({
       id: Date.now().toString(),
       tarih: new Date().toLocaleDateString('tr-TR'),
@@ -263,26 +248,6 @@ async function kuralFiyatsizResim({ sock, chatId, msg, userId, userName, userPho
     const tryDel = async (a) => { try { await sock.sendMessage(delChatId, { delete: delKey }); } catch(e) { if (a < 20) setTimeout(() => tryDel(a+1), 3000); } };
     tryDel(1);
     stats.messagesDeleted++;
-
-    // Aynı toplu ilanın resimleri → son log kaydına bak (10sn penceresi)
-    const existingFiyatsiz = deletedAdsLog.length > 0 &&
-      deletedAdsLog[0].grupId === delChatId &&
-      deletedAdsLog[0].sebep === 'Fiyatsız ilan (otomatik)' &&
-      (deletedAdsLog[0].userId === delUserId || deletedAdsLog[0].telefon === delUserPhone) &&
-      (Date.now() - new Date(deletedAdsLog[0].timestamp).getTime() < 10000)
-      ? deletedAdsLog[0] : null;
-    if (existingFiyatsiz) {
-      existingFiyatsiz.topluAdet = (existingFiyatsiz.topluAdet || 1) + 1;
-      if (delText) existingFiyatsiz.mesaj = delText.substring(0, 100);
-      if (mediaInfo) {
-        if (!existingFiyatsiz.medyaListesi) existingFiyatsiz.medyaListesi = [];
-        existingFiyatsiz.medyaListesi.push({ data: mediaInfo.data, mimetype: mediaInfo.mimetype, caption: delText || '' });
-        if (!existingFiyatsiz.medyaData) { existingFiyatsiz.medyaData = mediaInfo.data; existingFiyatsiz.medyaMimetype = mediaInfo.mimetype; }
-      }
-      saveDeletedLog();
-      io.emit('deleted_ads_updated', { total: deletedAdsLog.length });
-      return;
-    }
 
     deletedAdsLog.unshift({
       id: Date.now().toString(),

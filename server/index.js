@@ -378,16 +378,10 @@ async function handleMessage(msg) {
     if (hasMedia) {
       const ctx = { sock, chatId, realUserId, groupName, msg, userId, msgText, hasFiyat, spamTracker, stats, getDeleteKey, config, deletedAdsLog, saveDeletedLog, io, downloadMediaMessage };
 
-      // 0. Fiyatlı toplu ilanın caption'sız resimleri (paidTime'dan 10sn) → koru, kurallara sokma
-      const trkPre = spamTracker[userId];
-      if (!hasFiyat && trkPre && trkPre.hasPaid && trkPre.paidTime > 0 && (Date.now() - trkPre.paidTime < 10000)) {
-        return; // Fiyatlı toplu ilanın parçası → koru
-      }
-
       // 1. 5dk limit
       const res5dk = await kural5dkLimit(ctx);
       if (res5dk === 'deleted') return;
-      // res5dk === 'continue' → devam
+      // res5dk === 'new_period' veya 'continue' → devam
 
       // 2. Fiyatlı resim ise (caption'da fiyat var) → kural10 kontrol et, koru
       if (hasFiyat) {
@@ -396,7 +390,15 @@ async function handleMessage(msg) {
         return; // Fiyatlı resim → koru
       }
 
-      // 3. Fiyatsız resim → 30sn bekle
+      // 3. Aynı fiyatlı toplu ilanın caption'sız resimleri (30sn, hasPaid aktif) → koru
+      const trk = spamTracker[userId];
+      if (trk && trk.hasPaid && trk.firstAdTime > 0 && (Date.now() - trk.firstAdTime < 30000)) {
+        const res10d = await kural10Limit({ ...ctx, spamTracker });
+        if (res10d === 'deleted') return;
+        return; // Toplu fiyatlı ilanın parçası → koru
+      }
+
+      // 4. Fiyatsız resim → 30sn bekle
       await kuralFiyatsizResim({
         sock, chatId, msg, userId, userName, userPhone, groupName, msgText, spamTracker,
         stats, reklamMuafMsgIds, deletedAdsLog, saveDeletedLog, io, getDeleteKey, downloadMediaMessage, config
@@ -747,9 +749,6 @@ app.post('/api/clear-all-logs', (req, res) => {
   res.json({ success: true });
 });
 
-// ─── RESTORE QUEUE (sıralı gönderim, çakışma önleme) ─────────────────────────
-let restoreQueue = Promise.resolve();
-
 // ─── API: RESTORE AD ─────────────────────────────────────────────────────────
 app.post('/api/restore-ad', async (req, res) => {
   const { adId, id, groupId } = req.body;
@@ -757,37 +756,37 @@ app.post('/api/restore-ad', async (req, res) => {
   if (!isReady) return res.json({ success: false, error: 'Bağlı değil' });
   const ad = deletedAdsLog.find(a => a.id === lookupId);
   if (!ad) return res.json({ success: false, error: 'İlan bulunamadı' });
-  const target = groupId || activeGroupId;
-  if (!target) return res.json({ success: false, error: 'Hedef grup yok' });
-
-  // Sıralı kuyruk — eş zamanlı restore'lar çakışmasın
-  let result = { success: false, error: 'Bilinmeyen hata' };
-  restoreQueue = restoreQueue.then(async () => {
-    try {
-      const validMedia = (ad.medyaListesi || []).filter(m => m && m.data);
-      if (validMedia.length > 0) {
-        for (let i = 0; i < validMedia.length; i++) {
-          const buf = Buffer.from(validMedia[i].data, 'base64');
-          await sock.sendMessage(target, { image: buf, caption: '' });
-          if (i < validMedia.length - 1) await new Promise(r => setTimeout(r, 150));
-        }
-      } else if (ad.medyaData) {
-        const buf = Buffer.from(ad.medyaData, 'base64');
-        const isVideo = ad.medyaMimetype && ad.medyaMimetype.startsWith('video');
-        await sock.sendMessage(target, isVideo ? { video: buf, caption: '' } : { image: buf, caption: '' });
-      } else if (ad.mesaj) {
-        await sock.sendMessage(target, { text: ad.mesaj });
-      } else {
-        result = { success: false, error: 'Geri yüklenecek içerik yok' };
-        return;
+  try {
+    const target = groupId || activeGroupId;
+    if (!target) return res.json({ success: false, error: 'Hedef grup yok' });
+    // null data'lı resimleri filtrele (clear-media-cache sonrası olabilir)
+    const validMedia = (ad.medyaListesi || []).filter(m => m && m.data);
+    if (validMedia.length > 0) {
+      // Caption yok — sade resim gönder
+      for (let i = 0; i < validMedia.length; i++) {
+        const m = validMedia[i];
+        const buf = Buffer.from(m.data, 'base64');
+        await sock.sendMessage(target, { image: buf, caption: '' });
+        if (i < validMedia.length - 1) await new Promise(r => setTimeout(r, 200));
       }
-      deletedAdsLog = deletedAdsLog.filter(a => a.id !== lookupId);
-      saveDeletedLog();
-      result = { success: true };
-    } catch(e) { result = { success: false, error: e.message }; }
-  });
-  await restoreQueue;
-  res.json(result);
+    } else if (ad.medyaData) {
+      const buf = Buffer.from(ad.medyaData, 'base64');
+      const isVideo = ad.medyaMimetype && ad.medyaMimetype.startsWith('video');
+      if (isVideo) {
+        await sock.sendMessage(target, { video: buf, caption: '' });
+      } else {
+        await sock.sendMessage(target, { image: buf, caption: '' });
+      }
+    } else if (ad.mesaj) {
+      await sock.sendMessage(target, { text: ad.mesaj });
+    } else {
+      return res.json({ success: false, error: 'Geri yüklenecek içerik yok' });
+    }
+    // Geri yüklenen logu listeden kaldır
+    deletedAdsLog = deletedAdsLog.filter(a => a.id !== lookupId);
+    saveDeletedLog();
+    res.json({ success: true });
+  } catch(e) { res.json({ success: false, error: e.message }); }
 });
 
 // ─── API: RESTORE AS AD ──────────────────────────────────────────────────────
@@ -801,12 +800,13 @@ app.post('/api/restore-as-ad', async (req, res) => {
     const target = groupId || activeGroupId;
     if (!target) return res.json({ success: false, error: 'Hedef grup yok' });
     if (ad.medyaListesi && ad.medyaListesi.length > 0) {
-      // Caption yok — sade resim gönder, delay yok
+      // Caption yok — sade resim gönder
       for (let i = 0; i < ad.medyaListesi.length; i++) {
         const m = ad.medyaListesi[i];
         if (!m || !m.data) continue;
         const buf = Buffer.from(m.data, 'base64');
         await sock.sendMessage(target, { image: buf, caption: '' });
+        if (i < ad.medyaListesi.length - 1) await new Promise(r => setTimeout(r, 300));
       }
     } else if (ad.medyaData) {
       const buf = Buffer.from(ad.medyaData, 'base64');
