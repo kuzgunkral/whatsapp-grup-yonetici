@@ -7,8 +7,27 @@
 // ─── FIYAT ALGILAMA ─────────────────────────────────────────────────────────
 function hasFiyatMi(text) {
   if (!text) return false;
+
+  // Türkçe yazılı rakamlar (bir, iki, üç ... dokuz yüz bin milyon)
+  const YAZILI_SAYI = '(?:bir|iki|üç|uc|dort|dört|bes|beş|alti|altı|yedi|sekiz|dokuz|on|yirmi|otuz|kirk|kırk|elli|altmis|altmış|yetmiş|yetmis|seksen|doksan|yüz|yuz|bin|milyon|milyar)';
+  const yaziliSayiRegex = new RegExp(
+    `(\\d+|${YAZILI_SAYI})(\\s*(\\d+|${YAZILI_SAYI}))*\\s*(tl|lira|₺|bin|milyon|milyar|k)(?=[^a-zA-ZğüşıöçĞÜŞİÖÇ]|$)`,
+    'i'
+  );
+
   return (
-    /\d+[\.,]?\d*\s*(tl|lira|₺|k\b|bin\b|m\b|milyon\b|milyar\b|son\b)/i.test(text) ||
+    // "5 TL", "500tl", "5milyon", "5 milyon" vb. — rakam + birim
+    /\d+[\.,]?\d*\s*(tl|lira|₺|milyon|milyar|son)/i.test(text) ||
+    // "5k" veya "5 k" — word boundary olmadan (bin kısaltması)
+    /\d+[\.,]?\d*\s*k(?=[^a-zA-ZğüşıöçĞÜŞİÖÇ]|$)/i.test(text) ||
+    // "5bin", "5 bin", "10bin", "10 bin" — boşluklu/boşuksuz her iki yazım
+    /\d+[\.,]?\d*\s*bin(?=[^a-zA-ZğüşıöçĞÜŞİÖÇ]|$)/i.test(text) ||
+    // "5m", "5 m" — milyon kısaltması
+    /\d+[\.,]?\d*\s*m(?=[^a-zA-ZğüşıöçĞÜŞİÖÇ]|$)/i.test(text) ||
+    // Yazılı Türkçe sayı + birim: "beş bin", "iki milyon", "üç yüz bin tl", "bir bin lira"
+    yaziliSayiRegex.test(text) ||
+    // Sadece "bin", "iki bin", "üç bin" gibi — birden fazla yazılı sayı
+    /(?:bir|iki|üç|uc|dort|dört|bes|beş|alti|altı|yedi|sekiz|dokuz|on|yirmi|otuz|kirk|kırk|elli|altmis|altmış|yetmiş|yetmis|seksen|doksan)\s+(?:yüz\s+)?(?:bin|milyon|milyar)/i.test(text) ||
     /(fiyat|tane|adet)\s*:?\s*\d+[\.,]?\d*|\d+[\.,]?\d*\s*(fiyat|tane|adet)/i.test(text) ||
     /\d{1,3}([.,]\d{3})+([.,]\d{2})?/.test(text) ||
     (
