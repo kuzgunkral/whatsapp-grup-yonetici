@@ -382,13 +382,13 @@ async function handleMessage(msg) {
       const res5dk = await kural5dkLimit(ctx);
       if (res5dk === 'deleted') return;
 
-      // 2. 10 resim limiti (fiyatlı ilanlar için)
-      if (hasFiyat) {
-        const res10 = await kural10Limit({ ...ctx, spamTracker });
-        if (res10 === 'deleted') return;
-      }
+      // 2. 10 resim limiti — hem fiyatlı hem fiyatsız için
+      const res10 = await kural10Limit({ ...ctx, spamTracker });
+      if (res10 === 'deleted') return;
 
-      // 3. Tüm resimler → 30sn bekle, caption'da fiyat varsa koru, yoksa sil
+      // 3. Tüm resimler → 30sn bekle
+      // Aynı kullanıcının 30sn içinde fiyatlı resmi varsa (hasPaid=true, paidTime<30sn) → koru
+      // Aksi halde caption'da fiyat yoksa sil
       await kuralFiyatsizResim({
         sock, chatId, msg, userId, userName, userPhone, groupName, msgText, spamTracker,
         stats, reklamMuafMsgIds, deletedAdsLog, saveDeletedLog, io, getDeleteKey, downloadMediaMessage, config
