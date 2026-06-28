@@ -6,7 +6,7 @@ const QRCode = require('qrcode');
 const pino = require('pino');
 const fs = require('fs');
 const path = require('path');
-const { hasFiyatMi, kural5dkLimit, kural10Limit, kuralFiyatsizResim, kuralFiyatsizMetin } = require('./messageHandler');
+const { hasFiyatMi, kuralFiyatsizMetin } = require('./messageHandler');
 
 let makeWASocket, useMultiFileAuthState, makeCacheableSignalKeyStore;
 
@@ -375,33 +375,8 @@ async function handleMessage(msg) {
     const msgLower = msgText.toLowerCase();
     const hasFiyat = hasFiyatMi(msgText);
 
-    // ── KURAL: Resim işleme ──
-    if (hasMedia) {
-      // Fiyatlı resim → fiyatliGonderimIds'e userId ekle (30sn) + spamTracker.hasPaid=true
-      if (hasFiyat) {
-        if (!spamTracker[userId]) spamTracker[userId] = { hasPaid: false, paidTime: 0, ozelUyari: false, ozelUyariTime: 0, imgCount: 0, imgCountReset: 0, warned10: false, warned10Time: 0 };
-        spamTracker[userId].hasPaid = true;
-        spamTracker[userId].paidTime = Date.now();
-        spamTracker[userId].ozelUyari = false; // yeni ilan dönemi, uyarı sıfırla
-        fiyatliGonderimIds.add(userId);
-        setTimeout(() => fiyatliGonderimIds.delete(userId), 30000);
-      } else {
-        // Fiyatsız resim → 5dk spam kontrolü
-        const res5dk = await kural5dkLimit({ sock, chatId, realUserId, groupName, msg, userId, msgText, spamTracker, stats, getDeleteKey, config, deletedAdsLog, saveDeletedLog, io, downloadMediaMessage });
-        if (res5dk === 'deleted') return;
-      }
-
-      // 10 resim limiti (fiyatlı/fiyatsız hepsi)
-      const res10 = await kural10Limit({ sock, chatId, realUserId, groupName, msg, userId, spamTracker, fiyatliGonderimIds, stats, getDeleteKey, deletedAdsLog, saveDeletedLog, io, downloadMediaMessage });
-      if (res10 === 'deleted') return;
-
-      // 30sn bekle, caption'da fiyat yoksa sil
-      await kuralFiyatsizResim({
-        sock, chatId, msg, userId, userName, userPhone, groupName, msgText,
-        reklamMuafMsgIds, fiyatliGonderimIds, stats, deletedAdsLog, saveDeletedLog, io, getDeleteKey, downloadMediaMessage, config
-      });
-      return;
-    }
+    // ── Resim mesajları → kural yok, geç ──
+    if (hasMedia) return;
 
     // ── Fiyatlı metin → geç ──
     if (hasFiyat) return;
