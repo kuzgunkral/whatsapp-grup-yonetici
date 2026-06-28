@@ -440,10 +440,11 @@ async function handleMessage(msg) {
         });
       } else {
         // Henüz fiyatlı resim yok → Kural 1
+        // userActiveBatch geçilir — 30sn içinde batch fiyatlı olursa muaf tut
         await kuralResim({
           sock, chatId, realUserId, msg, userId, userName, userPhone, groupName, msgText,
           spamTracker, stats, reklamMuafMsgIds, deletedAdsLog, saveDeletedLog, io, getDeleteKey,
-          downloadMediaMessage, config
+          downloadMediaMessage, config, userActiveBatch
         });
       }
       return;
