@@ -383,14 +383,24 @@ async function handleMessage(msg) {
       if (res5dk === 'deleted') return;
       // res5dk === 'new_period' veya 'continue' → devam
 
-      // 2. Fiyatlı resim ise (caption'da fiyat var veya hasPaid aktif) → kural10 kontrol et, koru
+      // 2. Fiyatlı resim ise (caption'da fiyat var) → kural10 kontrol et, koru
       if (hasFiyat) {
         const res10 = await kural10Limit({ ...ctx, spamTracker });
         if (res10 === 'deleted') return;
         return; // Fiyatlı resim → koru
       }
 
-      // 3. Fiyatsız resim → 30sn bekle
+      // 3. Aynı toplu ilanın parçası mı? (30sn penceresi içinde, fiyatlı dönem aktif)
+      // WhatsApp toplu gönderimde sadece 1. resme caption eklenir, diğerleri boş gelir.
+      // firstAdTime 30sn içindeyse bu fiyatsız resimler aynı ilanın parçasıdır → koru.
+      const tracker = spamTracker[userId];
+      if (tracker && tracker.hasPaid && tracker.firstAdTime > 0 && (Date.now() - tracker.firstAdTime < 30000)) {
+        const res10c = await kural10Limit({ ...ctx, spamTracker });
+        if (res10c === 'deleted') return;
+        return; // Toplu fiyatlı ilanın caption'sız resmi → koru
+      }
+
+      // 4. Fiyatsız resim (toplu ilan değil) → 30sn bekle
       await kuralFiyatsizResim({
         sock, chatId, msg, userId, userName, userPhone, groupName, msgText, spamTracker,
         stats, reklamMuafMsgIds, deletedAdsLog, saveDeletedLog, io, getDeleteKey, downloadMediaMessage, config
