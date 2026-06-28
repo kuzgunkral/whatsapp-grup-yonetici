@@ -43,7 +43,7 @@ function hasFiyatMi(text) {
 async function kuralResim({
   sock, chatId, realUserId, msg, userId, userName, userPhone, groupName, msgText,
   spamTracker, stats, reklamMuafMsgIds, deletedAdsLog, saveDeletedLog, io,
-  getDeleteKey, downloadMediaMessage, config, userActiveBatch
+  getDeleteKey, downloadMediaMessage, config
 }) {
   const WAIT_MS = (config.photoWaitSec || 30) * 1000;
   const ONE_HOUR = 60 * 60 * 1000;
@@ -119,8 +119,6 @@ async function kuralResim({
   setTimeout(async () => {
     if (reklamMuafMsgIds.has(delMsgId)) { reklamMuafMsgIds.delete(delMsgId); return; }
     if (hasFiyatMi(delText)) return;
-    // Batch'te fiyatlı resim geldiyse muaf tut
-    if (userActiveBatch && userActiveBatch[delUserId] && userActiveBatch[delUserId].hasFiyat) return;
 
     let mediaInfo = null;
     try { mediaInfo = await downloadMediaMessage(msg); } catch(e) {}
@@ -221,8 +219,8 @@ const fiyatliResimTracker = {};
 
 async function kuralFiyatliResim({
   sock, chatId, realUserId, msg, userId, userName, userPhone, groupName, msgText,
-  spamTracker, stats, reklamMuafMsgIds, deletedAdsLog, saveDeletedLog, io,
-  getDeleteKey, downloadMediaMessage, config, kural3SetPaidTime, batchHasFiyat
+  stats, reklamMuafMsgIds, deletedAdsLog, saveDeletedLog, io,
+  getDeleteKey, downloadMediaMessage, config, kural3SetPaidTime
 }) {
   const WAIT_MS = (config.photoWaitSec || 30) * 1000;
   const ONE_HOUR = 60 * 60 * 1000;
@@ -231,17 +229,14 @@ async function kuralFiyatliResim({
   const existingFt = fiyatliResimTracker[userId];
   if (!existingFt || Date.now() - (existingFt.windowStart || 0) > WAIT_MS + 2000) {
     fiyatliResimTracker[userId] = {
-      count: 0, hasFiyat: false,
+      count: 0, hasFiyat: true, // fiyatlı resim geldi, her zaman true
       warn10Time: existingFt?.warn10Time || 0,
       cleanupScheduled: false, windowStart: Date.now()
     };
-    // Kural 1 sayacını sıfırla — yeni batch başladı
-    if (spamTracker && spamTracker[userId]) spamTracker[userId].imgCount = 0;
   }
   const ft = fiyatliResimTracker[userId];
   ft.count++;
-  // caption'da fiyat varsa VEYA batch'te fiyatlı resim zaten geldiyse
-  if (hasFiyatMi(msgText) || batchHasFiyat) ft.hasFiyat = true;
+  ft.hasFiyat = true; // Kural 2'ye gelen her resim fiyatlı sayılır
 
   // 10+ → uyarı (saatlik 1 kez) + anında sil
   if (ft.count > 10) {

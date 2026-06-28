@@ -65,9 +65,6 @@ let contactNames = {};
 let lastSentKeys = {};
 let reklamMuafMsgIds = new Set();
 const fiyatliGonderimIds = new Set();
-// Kullanıcının aktif toplu gönderiminde fiyatlı resim var mı?
-// windowStart'tan itibaren WAIT_MS+2sn içinde fiyatlı resim geldiyse true
-const userActiveBatch = {}; // { userId: { hasFiyat, windowStart } }
 const groupMessages = {};
 let deletedAdsLog = [];
 let stats = { messagesDeleted: 0, welcomesSent: 0, rulesReminded: 0, spammersRemoved: 0 };
@@ -415,36 +412,24 @@ async function handleMessage(msg) {
 
     // ── Resim ilanı ──
     if (hasMedia) {
-      const WAIT_MS_CFG = (config.photoWaitSec || 30) * 1000;
-
-      // Toplu gönderim batch'ini yönet
-      if (!userActiveBatch[userId] || Date.now() - userActiveBatch[userId].windowStart > WAIT_MS_CFG + 2000) {
-        // Yeni batch başlıyor — pencere sıfırla
-        userActiveBatch[userId] = { hasFiyat: false, windowStart: Date.now() };
-      }
-      // Bu batch'te fiyatlı resim var mı?
-      if (hasFiyat) userActiveBatch[userId].hasFiyat = true;
-      const batchHasFiyat = userActiveBatch[userId].hasFiyat;
-
       // KURAL 3: Her resimde önce kontrol edilir.
       // Sadece Kural 2 muafiyeti bittikten sonra aktif olur.
       const res3 = await kural3Check({ sock, chatId, realUserId, msg, userId, userName, userPhone, groupName, msgText, stats, deletedAdsLog, saveDeletedLog, io, getDeleteKey, downloadMediaMessage, config });
       if (res3 === 'deleted') return;
 
-      if (batchHasFiyat) {
-        // Bu batch'te fiyatlı resim var → Kural 2 (tüm batch muaf tutulur)
+      if (hasFiyat) {
+        // Fiyatlı resim → Kural 2 (kendi bağımsız sayacı)
         await kuralFiyatliResim({
           sock, chatId, realUserId, msg, userId, userName, userPhone, groupName, msgText,
-          spamTracker, stats, reklamMuafMsgIds, deletedAdsLog, saveDeletedLog, io, getDeleteKey,
-          downloadMediaMessage, config, kural3SetPaidTime, batchHasFiyat
+          stats, reklamMuafMsgIds, deletedAdsLog, saveDeletedLog, io, getDeleteKey,
+          downloadMediaMessage, config, kural3SetPaidTime
         });
       } else {
-        // Henüz fiyatlı resim yok → Kural 1
-        // userActiveBatch geçilir — 30sn içinde batch fiyatlı olursa muaf tut
+        // Fiyatsız resim → Kural 1 (kendi bağımsız sayacı)
         await kuralResim({
           sock, chatId, realUserId, msg, userId, userName, userPhone, groupName, msgText,
           spamTracker, stats, reklamMuafMsgIds, deletedAdsLog, saveDeletedLog, io, getDeleteKey,
-          downloadMediaMessage, config, userActiveBatch
+          downloadMediaMessage, config
         });
       }
       return;
