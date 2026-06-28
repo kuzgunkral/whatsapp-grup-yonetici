@@ -39,6 +39,7 @@ let noPriceTimers = {};
 let contactNames = {};
 let lastSentKeys = {};
 let reklamMuafMsgIds = new Set();
+const fiyatliGonderimIds = new Set(); // Fiyatlı toplu gönderim yapan userId'ler (30sn)
 const groupMessages = {};
 let deletedAdsLog = [];
 let stats = { messagesDeleted: 0, welcomesSent: 0, rulesReminded: 0, spammersRemoved: 0 };
@@ -378,20 +379,29 @@ async function handleMessage(msg) {
     if (hasMedia) {
       const ctx = { sock, chatId, realUserId, groupName, msg, userId, msgText, hasFiyat, spamTracker, stats, getDeleteKey, config, deletedAdsLog, saveDeletedLog, io, downloadMediaMessage };
 
-      // 1. 5dk spam kontrolü — hasPaid=true && 5dk içinde → anında sil (30sn bekleme yok)
+      // 1. Fiyatlı resim → fiyatliGonderimIds'e userId ekle (30sn), kural10 kontrol et, 30sn bekle
+      if (hasFiyat) {
+        fiyatliGonderimIds.add(userId);
+        setTimeout(() => fiyatliGonderimIds.delete(userId), 30000);
+        const res10 = await kural10Limit({ ...ctx, spamTracker });
+        if (res10 === 'deleted') return;
+        await kuralFiyatsizResim({
+          sock, chatId, msg, userId, userName, userPhone, groupName, msgText, spamTracker,
+          stats, reklamMuafMsgIds, fiyatliGonderimIds, deletedAdsLog, saveDeletedLog, io, getDeleteKey, downloadMediaMessage, config
+        });
+        return;
+      }
+
+      // 2. Fiyatsız resim → 5dk spam kontrolü (hasPaid=true && 5dk içinde → anında sil)
       const res5dk = await kural5dkLimit(ctx);
       if (res5dk === 'deleted') return;
 
-      // 2. 10 resim limiti — hem fiyatlı hem fiyatsız için
+      // 3. Fiyatsız resim, spam değil → 10 resim limiti + 30sn bekle
       const res10 = await kural10Limit({ ...ctx, spamTracker });
       if (res10 === 'deleted') return;
-
-      // 3. Tüm resimler → 30sn bekle
-      // Aynı kullanıcının 30sn içinde fiyatlı resmi varsa (hasPaid=true, paidTime<30sn) → koru
-      // Aksi halde caption'da fiyat yoksa sil
       await kuralFiyatsizResim({
         sock, chatId, msg, userId, userName, userPhone, groupName, msgText, spamTracker,
-        stats, reklamMuafMsgIds, deletedAdsLog, saveDeletedLog, io, getDeleteKey, downloadMediaMessage, config
+        stats, reklamMuafMsgIds, fiyatliGonderimIds, deletedAdsLog, saveDeletedLog, io, getDeleteKey, downloadMediaMessage, config
       });
       return;
     }

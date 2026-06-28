@@ -198,7 +198,7 @@ async function kural10Limit({ sock, chatId, realUserId, groupName, msg, userId, 
 }
 
 // ─── KURAL 3: FIYATSIZ RESİM — 30SN BEKLE, CAPTION'DA FIYAT YOKSA SİL ───────
-async function kuralFiyatsizResim({ sock, chatId, msg, userId, userName, userPhone, groupName, msgText, spamTracker, stats, reklamMuafMsgIds, deletedAdsLog, saveDeletedLog, io, getDeleteKey, downloadMediaMessage, config }) {
+async function kuralFiyatsizResim({ sock, chatId, msg, userId, userName, userPhone, groupName, msgText, spamTracker, stats, reklamMuafMsgIds, fiyatliGonderimIds, deletedAdsLog, saveDeletedLog, io, getDeleteKey, downloadMediaMessage, config }) {
   const t = spamTracker[userId];
   const WAIT_MS = (config.photoWaitSec || 30) * 1000;
 
@@ -230,14 +230,8 @@ async function kuralFiyatsizResim({ sock, chatId, msg, userId, userName, userPho
     if (reklamMuafMsgIds.has(delMsgId)) { reklamMuafMsgIds.delete(delMsgId); return; }
     // Caption'da fiyat varsa koru
     if (hasFiyatMi(delText)) { console.log('[LOG-DEBUG] hasFiyat=true, SKIP LOG'); return; }
-    // Aynı toplu fiyatlı ilanın caption'sız resimleri: paidTime<30sn VE adCount=1 (ilk ilan dönemi)
-    const tDelCheck = spamTracker[delUserId];
-    if (tDelCheck && tDelCheck.hasPaid && tDelCheck.paidTime > 0 &&
-        tDelCheck.adCount === 1 &&
-        (Date.now() - tDelCheck.paidTime < 30000)) {
-      console.log('[LOG-DEBUG] paidTime<30sn+adCount=1, toplu fiyatlı ilanın parçası → koru');
-      return;
-    }
+    // Aynı toplu fiyatlı ilanın caption'sız resmi → koru
+    if (fiyatliGonderimIds && fiyatliGonderimIds.has(delUserId)) { console.log('[LOG-DEBUG] fiyatliGonderimIds hit → koru'); return; }
 
     const tryDel = async (a) => { try { await sock.sendMessage(delChatId, { delete: delKey }); } catch(e) { if (a < 20) setTimeout(() => tryDel(a+1), 3000); } };
     tryDel(1);
