@@ -378,10 +378,16 @@ async function handleMessage(msg) {
     if (hasMedia) {
       const ctx = { sock, chatId, realUserId, groupName, msg, userId, msgText, hasFiyat, spamTracker, stats, getDeleteKey, config, deletedAdsLog, saveDeletedLog, io, downloadMediaMessage };
 
+      // 0. Fiyatlı toplu ilanın caption'sız resimleri (paidTime'dan 10sn) → koru, kurallara sokma
+      const trkPre = spamTracker[userId];
+      if (!hasFiyat && trkPre && trkPre.hasPaid && trkPre.paidTime > 0 && (Date.now() - trkPre.paidTime < 10000)) {
+        return; // Fiyatlı toplu ilanın parçası → koru
+      }
+
       // 1. 5dk limit
       const res5dk = await kural5dkLimit(ctx);
       if (res5dk === 'deleted') return;
-      // res5dk === 'new_period' veya 'continue' → devam
+      // res5dk === 'continue' → devam
 
       // 2. Fiyatlı resim ise (caption'da fiyat var) → kural10 kontrol et, koru
       if (hasFiyat) {
