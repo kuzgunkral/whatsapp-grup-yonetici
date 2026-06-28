@@ -208,19 +208,17 @@ async function kural3Check({
 }
 
 // ─── KURAL 2: FIYATLI TOPLU RESİM ────────────────────────────────────────────
-// Batch penceresi: WAIT_MS+2sn. Her batch bağımsız sayaç.
-// imgCount > 10 → anında sil
-// imgCount <= 10 → WAIT_MS bekle
-//   hasFiyat=true ise (caption veya batchHasFiyat) → muaf tut
-//   hasFiyat=false → sil (lazy medya)
-// Cleanup timer 1 kez çalışır → tracker sil + kural3SetPaidTime
-// fiyatliResimTracker[userId] = { count, hasFiyat, warn10Time, cleanupScheduled, windowStart }
+// Batch içinde en az 1 fiyatlı resim varsa tüm batch muaf tutulur.
+// 10+ resim → anında 10'a düşür (sil)
+// ≤10 resim → 30sn bekle → batch fiyatlıysa muaf, değilse sil
+// fiyatliResimTracker[userId] = { count, warn10Time, cleanupScheduled, windowStart }
 const fiyatliResimTracker = {};
 
 async function kuralFiyatliResim({
   sock, chatId, realUserId, msg, userId, userName, userPhone, groupName, msgText,
   stats, reklamMuafMsgIds, deletedAdsLog, saveDeletedLog, io,
-  getDeleteKey, downloadMediaMessage, config, kural3SetPaidTime
+  getDeleteKey, downloadMediaMessage, config, kural3SetPaidTime,
+  k2BatchHasFiyat  // index.js'den geçirilen batch flag
 }) {
   const WAIT_MS = (config.photoWaitSec || 30) * 1000;
   const ONE_HOUR = 60 * 60 * 1000;
@@ -229,14 +227,14 @@ async function kuralFiyatliResim({
   const existingFt = fiyatliResimTracker[userId];
   if (!existingFt || Date.now() - (existingFt.windowStart || 0) > WAIT_MS + 2000) {
     fiyatliResimTracker[userId] = {
-      count: 0, hasFiyat: true, // fiyatlı resim geldi, her zaman true
+      count: 0,
       warn10Time: existingFt?.warn10Time || 0,
-      cleanupScheduled: false, windowStart: Date.now()
+      cleanupScheduled: false,
+      windowStart: Date.now()
     };
   }
   const ft = fiyatliResimTracker[userId];
   ft.count++;
-  ft.hasFiyat = true; // Kural 2'ye gelen her resim fiyatlı sayılır
 
   // 10+ → uyarı (saatlik 1 kez) + anında sil
   if (ft.count > 10) {
@@ -274,7 +272,7 @@ async function kuralFiyatliResim({
     return 'deleted';
   }
 
-  // ≤10 → WAIT_MS bekle, sonra karar ver
+  // ≤10 → 30sn bekle → batch fiyatlıysa muaf, değilse sil
   const delKey = getDeleteKey(msg);
   const delMsgId = msg.key.id;
   const delText = msgText;
@@ -283,19 +281,18 @@ async function kuralFiyatliResim({
   const delGroupName = groupName;
   const delUserPhone = userPhone;
   const delUserName = userName;
-  // hasFiyat durumunu closure'da sabitle — tracker silinse bile doğru karar verilsin
-  const snapshotHasFiyat = ft.hasFiyat;
+  // k2BatchHasFiyat snapshot olarak sakla — batch'te fiyatlı resim var mı
+  const batchFiyatliSnapshot = k2BatchHasFiyat;
 
   setTimeout(async () => {
     if (reklamMuafMsgIds.has(delMsgId)) { reklamMuafMsgIds.delete(delMsgId); return; }
-    // Tracker hâlâ varsa hasFiyat'ı kontrol et, yoksa snapshot'a bak
-    const tracker = fiyatliResimTracker[delUserId];
-    const batchFiyatli = (tracker && tracker.hasFiyat) || snapshotHasFiyat;
-    if (batchFiyatli) {
+    // Batch fiyatlıysa → muaf tut (snapshot veya tracker'dan)
+    if (batchFiyatliSnapshot) {
       console.log(`[K2-MUAF] user=${delUserId} → koru`);
+      if (typeof kural3SetPaidTime === 'function') kural3SetPaidTime(delUserId);
       return;
     }
-    // Fiyat yok → lazy medya indir + sil
+    // Fiyat yok → sil
     let mediaInfo = null;
     try { mediaInfo = await downloadMediaMessage(msg); } catch(e) {}
     const tryDel = async (a) => { try { await sock.sendMessage(delChatId, { delete: delKey }); } catch(e) { if (a < 3) setTimeout(() => tryDel(a+1), 5000); } };
@@ -318,14 +315,10 @@ async function kuralFiyatliResim({
     io.emit('deleted_ads_updated', { total: deletedAdsLog.length });
   }, WAIT_MS);
 
-  // Cleanup timer sadece 1 kez planlanır — 30sn timeout'lardan SONRA çalışsın
+  // Cleanup timer sadece 1 kez — 30sn timeout'lardan sonra
   if (!ft.cleanupScheduled) {
     ft.cleanupScheduled = true;
     setTimeout(() => {
-      const tracker = fiyatliResimTracker[delUserId];
-      if (tracker && tracker.hasFiyat) {
-        if (typeof kural3SetPaidTime === 'function') kural3SetPaidTime(delUserId);
-      }
       delete fiyatliResimTracker[delUserId];
     }, WAIT_MS + 5000);
   }

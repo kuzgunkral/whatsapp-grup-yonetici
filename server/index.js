@@ -65,6 +65,9 @@ let contactNames = {};
 let lastSentKeys = {};
 let reklamMuafMsgIds = new Set();
 const fiyatliGonderimIds = new Set();
+// Kural 2 batch tracker: batch içinde fiyatlı resim geldiyse tüm batch Kural 2'ye gider
+// { userId: { hasFiyat: bool, windowStart: number } }
+const k2BatchTracker = {};
 const groupMessages = {};
 let deletedAdsLog = [];
 let stats = { messagesDeleted: 0, welcomesSent: 0, rulesReminded: 0, spammersRemoved: 0 };
@@ -416,9 +419,16 @@ async function handleMessage(msg) {
       const POST_WARN_GRACE = 3000;
       const st = spamTracker[userId];
 
+      // Kural 2 batch tracker: pencere dolmuşsa sıfırla
+      if (!k2BatchTracker[userId] || Date.now() - k2BatchTracker[userId].windowStart > WAIT_MS_CFG + 2000) {
+        k2BatchTracker[userId] = { hasFiyat: false, windowStart: Date.now() };
+      }
+      if (hasFiyat) k2BatchTracker[userId].hasFiyat = true;
+      const k2BatchHasFiyat = k2BatchTracker[userId].hasFiyat;
+
       // Kural 1'de 10 bırakıldıktan 3sn sonra gelen FIYATSIZ resimler → tüm kurallardan bağımsız, direkt 30sn bekle
-      // Fiyatlı resimler bu path'e girmez → normal Kural 2'ye gider
-      if (!hasFiyat && st && st.warn10Time && Date.now() - st.warn10Time > POST_WARN_GRACE) {
+      // Fiyatlı resimler ve k2 batch içindekiler bu path'e girmez
+      if (!k2BatchHasFiyat && st && st.warn10Time && Date.now() - st.warn10Time > POST_WARN_GRACE) {
         const delKey = getDeleteKey(msg);
         const delMsgId = msg.key.id;
         const delText = msgText;
@@ -456,15 +466,15 @@ async function handleMessage(msg) {
       const res3 = await kural3Check({ sock, chatId, realUserId, msg, userId, userName, userPhone, groupName, msgText, stats, deletedAdsLog, saveDeletedLog, io, getDeleteKey, downloadMediaMessage, config });
       if (res3 === 'deleted') return;
 
-      if (hasFiyat) {
-        // Fiyatlı resim → Kural 2 (kendi bağımsız sayacı)
+      if (k2BatchHasFiyat) {
+        // Batch'te fiyatlı resim var → Kural 2 (caption'sız resimler de dahil)
         await kuralFiyatliResim({
           sock, chatId, realUserId, msg, userId, userName, userPhone, groupName, msgText,
           stats, reklamMuafMsgIds, deletedAdsLog, saveDeletedLog, io, getDeleteKey,
-          downloadMediaMessage, config, kural3SetPaidTime
+          downloadMediaMessage, config, kural3SetPaidTime, k2BatchHasFiyat
         });
       } else {
-        // Fiyatsız resim → Kural 1 (kendi bağımsız sayacı)
+        // Henüz fiyatlı resim yok → Kural 1
         await kuralResim({
           sock, chatId, realUserId, msg, userId, userName, userPhone, groupName, msgText,
           spamTracker, stats, reklamMuafMsgIds, deletedAdsLog, saveDeletedLog, io, getDeleteKey,
