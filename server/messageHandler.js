@@ -45,8 +45,16 @@ async function kuralResim({ sock, chatId, realUserId, msg, userId, userName, use
   const WAIT_MS = (config.photoWaitSec || 30) * 1000;
   const ONE_HOUR = 60 * 60 * 1000;
 
-  if (!spamTracker[userId]) spamTracker[userId] = { imgCount: 0, warn10Time: 0 };
+  if (!spamTracker[userId]) spamTracker[userId] = { imgCount: 0, warn10Time: 0, windowStart: Date.now() };
   const t = spamTracker[userId];
+
+  // Pencere kapandıysa (WAIT_MS+2sn geçti) sayacı sıfırla — yeni toplu gönderim
+  if (t.windowStart && Date.now() - t.windowStart > WAIT_MS + 2000) {
+    t.imgCount = 0;
+    t.windowStart = Date.now();
+  }
+  if (!t.windowStart) t.windowStart = Date.now();
+
   t.imgCount++;
 
   // 10'u aştı → uyarı (saatlik 1 kez) + anında sil
@@ -225,6 +233,11 @@ async function kuralFiyatliResim({ sock, chatId, realUserId, msg, userId, userNa
   const ft = fiyatliResimTracker[userId];
   ft.count++;
   if (hasFiyatMi(msgText)) ft.hasFiyat = true;
+
+  // Kural 1'in spamTracker sayacını sıfırla — fiyatlı ilan yeni bir toplu gönderim başlatır
+  if (spamTracker && spamTracker[userId]) {
+    spamTracker[userId].imgCount = 0;
+  }
 
   // 10+ → uyarı (saatlik 1 kez) + anında sil
   if (ft.count > 10) {
