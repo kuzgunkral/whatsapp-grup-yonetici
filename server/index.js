@@ -436,7 +436,7 @@ async function handleMessage(msg) {
         await kuralFiyatliResim({
           sock, chatId, realUserId, msg, userId, userName, userPhone, groupName, msgText,
           spamTracker, stats, reklamMuafMsgIds, deletedAdsLog, saveDeletedLog, io, getDeleteKey,
-          downloadMediaMessage, config, kural3SetPaidTime
+          downloadMediaMessage, config, kural3SetPaidTime, batchHasFiyat
         });
       } else {
         // Henüz fiyatlı resim yok → Kural 1

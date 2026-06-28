@@ -227,7 +227,7 @@ async function kural3Check({ sock, chatId, realUserId, msg, userId, userName, us
 // fiyatliResimTracker[userId] = { count, hasFiyat, pendingMsgs, warn10Time, cleanupScheduled }
 const fiyatliResimTracker = {};
 
-async function kuralFiyatliResim({ sock, chatId, realUserId, msg, userId, userName, userPhone, groupName, msgText, spamTracker, stats, reklamMuafMsgIds, deletedAdsLog, saveDeletedLog, io, getDeleteKey, downloadMediaMessage, config, kural3SetPaidTime }) {
+async function kuralFiyatliResim({ sock, chatId, realUserId, msg, userId, userName, userPhone, groupName, msgText, spamTracker, stats, reklamMuafMsgIds, deletedAdsLog, saveDeletedLog, io, getDeleteKey, downloadMediaMessage, config, kural3SetPaidTime, batchHasFiyat }) {
   const WAIT_MS = (config.photoWaitSec || 30) * 1000;
   const ONE_HOUR = 60 * 60 * 1000;
 
@@ -236,7 +236,8 @@ async function kuralFiyatliResim({ sock, chatId, realUserId, msg, userId, userNa
   }
   const ft = fiyatliResimTracker[userId];
   ft.count++;
-  if (hasFiyatMi(msgText)) ft.hasFiyat = true;
+  // caption'da fiyat varsa VEYA batch'te fiyatlı resim geldiyse hasFiyat = true
+  if (hasFiyatMi(msgText) || batchHasFiyat) ft.hasFiyat = true;
 
   // Kural 1'in spamTracker sayacını sıfırla — fiyatlı ilan yeni bir toplu gönderim başlatır
   if (spamTracker && spamTracker[userId]) {
