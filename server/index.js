@@ -65,6 +65,9 @@ let contactNames = {};
 let lastSentKeys = {};
 let reklamMuafMsgIds = new Set();
 const fiyatliGonderimIds = new Set();
+// Kullanıcı bazlı son fiyat penceresi — herhangi bir mesajda fiyat varsa
+// o kullanıcının 30+5sn içindeki tüm resimleri muaf tutulur
+const userRecentFiyat = {}; // { userId: { hasFiyat, windowStart } }
 const groupMessages = {};
 let deletedAdsLog = [];
 let stats = { messagesDeleted: 0, welcomesSent: 0, rulesReminded: 0, spammersRemoved: 0 };
@@ -410,27 +413,36 @@ async function handleMessage(msg) {
     const msgLower = msgText.toLowerCase();
     const hasFiyat = hasFiyatMi(msgText);
 
+    // ── Kullanıcı fiyat penceresini güncelle ──
+    // Her mesajda (resimli veya metin) fiyat varsa userRecentFiyat'a yaz.
+    // Kural 1'in 30sn timeout'u bunu kontrol eder — caption'sız resimler de muaf kalır.
+    const WAIT_MS_CFG = (config.photoWaitSec || 30) * 1000;
+    if (!userRecentFiyat[userId] || Date.now() - userRecentFiyat[userId].windowStart > WAIT_MS_CFG + 5000) {
+      userRecentFiyat[userId] = { hasFiyat: false, windowStart: Date.now() };
+    }
+    if (hasFiyat) userRecentFiyat[userId].hasFiyat = true;
+
     // ── Resim ilanı ──
     if (hasMedia) {
       // KURAL 3: Her resimde önce kontrol edilir (fiyatlı/fiyatsız fark etmez).
       // Ancak sadece Kural 2 muafiyeti bittikten sonra aktif olur (paidTime set edilince).
-      // Kural 2 muafiyeti süresi içindeyken kural3Check 'continue' döner.
       const res3 = await kural3Check({ sock, chatId, realUserId, msg, userId, userName, userPhone, groupName, msgText, stats, deletedAdsLog, saveDeletedLog, io, getDeleteKey, downloadMediaMessage, config });
       if (res3 === 'deleted') return;
 
       if (hasFiyat) {
-        // KURAL 2: Fiyatlı toplu resim
-        // kural3SetPaidTime, 30sn muafiyet penceresi kapandıktan sonra çağrılır
+        // KURAL 2: Fiyatlı resim (caption'da fiyat var)
         await kuralFiyatliResim({
           sock, chatId, realUserId, msg, userId, userName, userPhone, groupName, msgText,
           spamTracker, stats, reklamMuafMsgIds, deletedAdsLog, saveDeletedLog, io, getDeleteKey,
           downloadMediaMessage, config, kural3SetPaidTime
         });
       } else {
-        // KURAL 1: Fiyatsız toplu resim
+        // KURAL 1: Caption'sız veya fiyatsız resim
+        // userRecentFiyat geçilir — 30sn içinde bu kullanıcıdan fiyat geldiyse muaf tut
         await kuralResim({
           sock, chatId, realUserId, msg, userId, userName, userPhone, groupName, msgText,
-          spamTracker, stats, reklamMuafMsgIds, deletedAdsLog, saveDeletedLog, io, getDeleteKey, downloadMediaMessage, config
+          spamTracker, stats, reklamMuafMsgIds, deletedAdsLog, saveDeletedLog, io, getDeleteKey,
+          downloadMediaMessage, config, userRecentFiyat
         });
       }
       return;
