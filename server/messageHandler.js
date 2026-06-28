@@ -171,7 +171,7 @@ async function kural3Check({
     return 'continue';
   }
 
-  // 5dk içinde → saatlik 1 kez uyarı + anında sil
+  // 5dk içinde → saatlik 1 kez uyarı gönder, her seferinde sessiz sil
   if (!tracker.warnedTime || now - tracker.warnedTime > ONE_HOUR) {
     tracker.warnedTime = now;
     try {
