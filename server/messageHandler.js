@@ -160,6 +160,7 @@ function kural3SetPaidTime(userId) {
 async function kural3Check({ sock, chatId, realUserId, msg, userId, userName, userPhone, groupName, msgText, stats, deletedAdsLog, saveDeletedLog, io, getDeleteKey, downloadMediaMessage, config }) {
   const now = Date.now();
   const FIVE_MIN = (config.adIntervalMin || 5) * 60 * 1000;
+  const ONE_HOUR = 60 * 60 * 1000;
 
   const tracker = spam5dkTracker[userId];
   if (!tracker || !tracker.paidTime) return 'continue';
@@ -169,7 +170,17 @@ async function kural3Check({ sock, chatId, realUserId, msg, userId, userName, us
     return 'continue';
   }
 
-  // 5dk içinde → sessiz anında sil (uyarı yok)
+  // 5dk içinde → saatlik 1 kez uyarı gönder + anında sil
+  if (!tracker.warnedTime || (now - tracker.warnedTime > ONE_HOUR)) {
+    tracker.warnedTime = now;
+    try {
+      await sock.sendMessage(chatId, {
+        text: `⚠️ @${(realUserId||userId).split('@')[0]} 5 dakikada yalnızca 1 ilan atabilirsiniz. Lütfen bekleyiniz.\n\n🛡️ _${groupName} Yönetimi_`,
+        mentions: [realUserId || userId]
+      });
+    } catch(e) {}
+  }
+
   const delKey = getDeleteKey(msg);
   const tryDel = async (a) => { try { await sock.sendMessage(chatId, { delete: delKey }); } catch(e) { if (a < 20) setTimeout(() => tryDel(a+1), 3000); } };
   tryDel(1);
