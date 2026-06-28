@@ -127,9 +127,6 @@ const LogsScreen = () => {
           <TouchableOpacity style={[styles.cardBtn, styles.cardBtnGreen]} onPress={() => handleRestore(item)}>
             <Text style={styles.cardBtnText}>🔄 Geri Yükle</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={[styles.cardBtn, styles.cardBtnBlue]} onPress={() => handleRestoreAsAd(item)}>
-            <Text style={styles.cardBtnText}>📢 Reklam</Text>
-          </TouchableOpacity>
           <TouchableOpacity style={[styles.cardBtn, styles.cardBtnRed]} onPress={() => handleDeleteLog(item)}>
             <Text style={styles.cardBtnText}>🗑️</Text>
           </TouchableOpacity>
