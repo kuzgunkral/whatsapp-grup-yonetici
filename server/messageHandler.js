@@ -93,16 +93,9 @@ async function kural5dkLimit({ sock, chatId, realUserId, groupName, msg, userId,
   // 30sn içinde gelenler aynı toplu ilan (WhatsApp toplu resim gönderimi)
   const isPartOfFirst = t.firstAdTime > 0 && (now - t.firstAdTime < 30000);
 
-  // 2. ilan — 5dk dolmadan yeni ilan
+  // 2. ilan — 5dk dolmadan tekrar resim (fiyatlı veya fiyatsız) → anında sil
   if (!isPartOfFirst && t.firstAdTime > 0 && (now - t.firstAdTime < FIVE_MIN) && t.adCount >= 1) {
-    if (hasFiyat) {
-      // Fiyatlı resim yeni dönem başlatır
-      t.adCount = 1;
-      t.firstAdTime = now;
-      t.count = 1;
-      return 'new_period';
-    } else {
-      // Fiyatsız ilan silinir — fiyatlı ilanın 5dk hakkı korunur
+    // Her türlü resim ilanı 5dk içinde tekrar atılırsa sil
       if (!t.ozelUyari || (now - t.ozelUyariTime > ONE_HOUR)) {
         t.ozelUyari = true;
         t.ozelUyariTime = now;
@@ -167,7 +160,6 @@ async function kural5dkLimit({ sock, chatId, realUserId, groupName, msg, userId,
       io.emit('log', { type: 'deleted', user: msg.pushName || realUserId.split('@')[0], group: groupName });
       io.emit('deleted_ads_updated', { total: deletedAdsLog.length });
       return 'deleted';
-    }
   }
 
   return 'continue'; // Bu kural devreye girmedi
