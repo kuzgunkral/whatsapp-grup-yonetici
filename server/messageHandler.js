@@ -87,8 +87,6 @@ async function kuralResim({
     tryDel(1);
     stats.messagesDeleted++;
     console.log(`🗑️ [K1-10+] user=${userId} count=${t.imgCount}`);
-    let mediaInfo = null;
-    try { mediaInfo = await downloadMediaMessage(msg); } catch(e) {}
     deletedAdsLog.unshift({
       id: Date.now().toString(),
       tarih: new Date().toLocaleDateString('tr-TR'),
@@ -97,8 +95,7 @@ async function kuralResim({
       kullanici: userName || userPhone, telefon: userPhone, userId,
       grupId: chatId, grup: groupName, mesaj: msgText || '',
       sebep: '10+ resim (anında silindi)', topluAdet: 1,
-      medyaData: mediaInfo?.data || null, medyaMimetype: mediaInfo?.mimetype || null,
-      medyaListesi: mediaInfo ? [{ data: mediaInfo.data, mimetype: mediaInfo.mimetype, caption: msgText || '' }] : []
+      medyaData: null, medyaMimetype: null, medyaListesi: []
     });
     if (deletedAdsLog.length > 500) deletedAdsLog.splice(500);
     saveDeletedLog();
@@ -223,7 +220,7 @@ async function kuralFiyatliResim({
   sock, chatId, realUserId, msg, userId, userName, userPhone, groupName, msgText,
   stats, reklamMuafMsgIds, deletedAdsLog, saveDeletedLog, io,
   getDeleteKey, downloadMediaMessage, config, kural3SetPaidTime,
-  k2BatchHasFiyat  // index.js'den geçirilen batch flag
+  k2BatchHasFiyat, onWarn10
 }) {
   const WAIT_MS = (config.photoWaitSec || 30) * 1000;
   const ONE_HOUR = 60 * 60 * 1000;
@@ -258,8 +255,7 @@ async function kuralFiyatliResim({
     tryDel(1);
     stats.messagesDeleted++;
     console.log(`🗑️ [K2-10+] user=${userId} count=${ft.count}`);
-    let mediaInfo = null;
-    try { mediaInfo = await downloadMediaMessage(msg); } catch(e) {}
+    if (typeof onWarn10 === 'function') onWarn10(userId);
     deletedAdsLog.unshift({
       id: Date.now().toString(),
       tarih: new Date().toLocaleDateString('tr-TR'),
@@ -268,8 +264,7 @@ async function kuralFiyatliResim({
       kullanici: userName || userPhone, telefon: userPhone, userId,
       grupId: chatId, grup: groupName, mesaj: msgText || '',
       sebep: 'Fiyatlı resim 10+ (anında silindi)', topluAdet: 1,
-      medyaData: mediaInfo?.data || null, medyaMimetype: mediaInfo?.mimetype || null,
-      medyaListesi: mediaInfo ? [{ data: mediaInfo.data, mimetype: mediaInfo.mimetype, caption: msgText || '' }] : []
+      medyaData: null, medyaMimetype: null, medyaListesi: []
     });
     if (deletedAdsLog.length > 500) deletedAdsLog.splice(500);
     saveDeletedLog();

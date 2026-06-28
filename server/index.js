@@ -421,14 +421,16 @@ async function handleMessage(msg) {
 
       // Kural 2 batch tracker: pencere dolmuşsa sıfırla
       if (!k2BatchTracker[userId] || Date.now() - k2BatchTracker[userId].windowStart > WAIT_MS_CFG + 2000) {
-        k2BatchTracker[userId] = { hasFiyat: false, windowStart: Date.now() };
+        k2BatchTracker[userId] = { hasFiyat: false, windowStart: Date.now(), warn10Time: 0 };
       }
       if (hasFiyat) k2BatchTracker[userId].hasFiyat = true;
       const k2BatchHasFiyat = k2BatchTracker[userId].hasFiyat;
+      const k2Warn10Time = k2BatchTracker[userId].warn10Time || 0;
 
       // Kural 1'de 10 bırakıldıktan 3sn sonra gelen FIYATSIZ resimler → tüm kurallardan bağımsız, direkt 30sn bekle
-      // Fiyatlı resimler ve k2 batch içindekiler bu path'e girmez
-      if (!k2BatchHasFiyat && st && st.warn10Time && Date.now() - st.warn10Time > POST_WARN_GRACE) {
+      // Kural 2'de 10 bırakıldıktan 3sn sonra da bu path'e girer (fiyatlı da olsa)
+      if (((!k2BatchHasFiyat && st && st.warn10Time && Date.now() - st.warn10Time > POST_WARN_GRACE)) ||
+          (k2Warn10Time && Date.now() - k2Warn10Time > POST_WARN_GRACE)) {
         const delKey = getDeleteKey(msg);
         const delMsgId = msg.key.id;
         const delText = msgText;
@@ -477,10 +479,13 @@ async function handleMessage(msg) {
           kural3SetPaidTime(uid);
           delete k2BatchTracker[uid];
         };
+        const onWarn10 = (uid) => {
+          if (k2BatchTracker[uid]) k2BatchTracker[uid].warn10Time = Date.now();
+        };
         await kuralFiyatliResim({
           sock, chatId, realUserId, msg, userId, userName, userPhone, groupName, msgText,
           stats, reklamMuafMsgIds, deletedAdsLog, saveDeletedLog, io, getDeleteKey,
-          downloadMediaMessage, config, kural3SetPaidTime: kural3SetPaidTimeWrapped, k2BatchHasFiyat
+          downloadMediaMessage, config, kural3SetPaidTime: kural3SetPaidTimeWrapped, k2BatchHasFiyat, onWarn10
         });
       } else {
         // Henüz fiyatlı resim yok → Kural 1
