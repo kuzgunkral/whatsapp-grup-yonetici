@@ -48,18 +48,10 @@ function hasFiyatMi(text) {
 // imgCount <= 10 → 30sn bekle, o resmin caption'ında fiyat yoksa sil
 // spamTracker[userId] = { imgCount, imgCountReset }
 async function kuralResim({ sock, chatId, msg, userId, userName, userPhone, groupName, msgText, spamTracker, stats, reklamMuafMsgIds, deletedAdsLog, saveDeletedLog, io, getDeleteKey, downloadMediaMessage, config }) {
-  const now = Date.now();
   const WAIT_MS = (config.photoWaitSec || 30) * 1000;
-  const RESET_MS = 60 * 1000; // 60sn geçince yeni toplu ilan sayılır
 
-  if (!spamTracker[userId]) spamTracker[userId] = { imgCount: 0, imgCountReset: 0 };
+  if (!spamTracker[userId]) spamTracker[userId] = { imgCount: 0 };
   const t = spamTracker[userId];
-
-  // 60sn geçtiyse imgCount sıfırla (yeni toplu gönderim)
-  if (now - t.imgCountReset > RESET_MS) {
-    t.imgCount = 0;
-    t.imgCountReset = now;
-  }
   t.imgCount++;
 
   // 10'u aştı → anında sil
