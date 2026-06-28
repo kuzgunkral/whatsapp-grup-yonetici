@@ -66,16 +66,21 @@ async function kural5dkLimit({ sock, chatId, realUserId, groupName, msg, userId,
     t.firstAdTime = 0;
   }
 
-  t.count++;
   t.lastTime = now;
 
   // İlk fiyatlı ilan başlangıcı — sadece fiyatlı gelince dönem başlar
   if (hasFiyat && t.adCount === 0) {
     t.adCount = 1;
     t.firstAdTime = now;
+    t.count = 1; // Fiyatlı dönem başladı, sayacı 1'den başlat
     t.hasPaid = true;
     t.paidTime = now;
     return 'continue'; // İlk fiyatlı ilan, devam et
+  }
+
+  // Fiyatlı dönem aktifse count'u artır (sadece fiyatlı dönem resimlerini say)
+  if (t.firstAdTime > 0) {
+    t.count++;
   }
 
   // Fiyat varsa hasPaid işaretle
