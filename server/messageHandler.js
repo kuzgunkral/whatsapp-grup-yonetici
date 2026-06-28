@@ -230,10 +230,12 @@ async function kuralFiyatsizResim({ sock, chatId, msg, userId, userName, userPho
     if (reklamMuafMsgIds.has(delMsgId)) { reklamMuafMsgIds.delete(delMsgId); return; }
     // Caption'da fiyat varsa koru
     if (hasFiyatMi(delText)) { console.log('[LOG-DEBUG] hasFiyat=true, SKIP LOG'); return; }
-    // Aynı kullanıcının 30sn içinde fiyatlı resmi varsa → bu resim de aynı ilanın parçası → koru
+    // Aynı toplu fiyatlı ilanın caption'sız resimleri: paidTime<30sn VE adCount=1 (ilk ilan dönemi)
     const tDelCheck = spamTracker[delUserId];
-    if (tDelCheck && tDelCheck.hasPaid && tDelCheck.paidTime > 0 && (Date.now() - tDelCheck.paidTime < 30000)) {
-      console.log('[LOG-DEBUG] paidTime<30sn, toplu fiyatlı ilanın parçası → koru');
+    if (tDelCheck && tDelCheck.hasPaid && tDelCheck.paidTime > 0 &&
+        tDelCheck.adCount === 1 &&
+        (Date.now() - tDelCheck.paidTime < 30000)) {
+      console.log('[LOG-DEBUG] paidTime<30sn+adCount=1, toplu fiyatlı ilanın parçası → koru');
       return;
     }
 
