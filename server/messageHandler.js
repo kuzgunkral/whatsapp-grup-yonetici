@@ -48,11 +48,26 @@ async function kuralResim({
   const WAIT_MS = (config.photoWaitSec || 30) * 1000;
   const ONE_HOUR = 60 * 60 * 1000;
 
-  // Tracker başlat veya pencere dolmuşsa sıfırla
-  if (!spamTracker[userId] || Date.now() - (spamTracker[userId].windowStart || 0) > WAIT_MS + 2000) {
-    spamTracker[userId] = { imgCount: 0, warn10Time: spamTracker[userId]?.warn10Time || 0, windowStart: Date.now() };
+  const now = Date.now();
+  const POST_WARN_GRACE = 3000; // 10 bırakıldıktan 3sn sonra yeni batch sayılır
+
+  // Tracker yoksa sıfırla
+  if (!spamTracker[userId]) {
+    spamTracker[userId] = { imgCount: 0, warn10Time: 0, windowStart: now };
   }
   const t = spamTracker[userId];
+
+  // Pencere dolmuşsa sıfırla
+  if (now - (t.windowStart || 0) > WAIT_MS + 2000) {
+    t.imgCount = 0;
+    t.windowStart = now;
+  }
+  // 10 bırakılıp 3sn geçtiyse → yeni batch: sıfırla ve 30sn bekleme path'ine gir
+  else if (t.imgCount >= 10 && t.warn10Time && now - t.warn10Time > POST_WARN_GRACE) {
+    t.imgCount = 0;
+    t.windowStart = now;
+  }
+
   t.imgCount++;
 
   // 10+ → uyarı (saatlik 1 kez) + anında sil
