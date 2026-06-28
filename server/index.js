@@ -381,24 +381,15 @@ async function handleMessage(msg) {
       // 1. 5dk limit
       const res5dk = await kural5dkLimit(ctx);
       if (res5dk === 'deleted') return;
-      // res5dk === 'new_period' veya 'continue' → devam
 
-      // 2. Fiyatlı resim ise (caption'da fiyat var) → kural10 kontrol et, koru
+      // 2. Fiyatlı resim → kural10 kontrol et, koru
       if (hasFiyat) {
         const res10 = await kural10Limit({ ...ctx, spamTracker });
         if (res10 === 'deleted') return;
-        return; // Fiyatlı resim → koru
+        return;
       }
 
-      // 3. Aynı fiyatlı toplu ilanın caption'sız resimleri (30sn, hasPaid aktif) → koru
-      const trk = spamTracker[userId];
-      if (trk && trk.hasPaid && trk.firstAdTime > 0 && (Date.now() - trk.firstAdTime < 30000)) {
-        const res10d = await kural10Limit({ ...ctx, spamTracker });
-        if (res10d === 'deleted') return;
-        return; // Toplu fiyatlı ilanın parçası → koru
-      }
-
-      // 4. Fiyatsız resim → 30sn bekle
+      // 3. Fiyatsız resim → 30sn bekle
       await kuralFiyatsizResim({
         sock, chatId, msg, userId, userName, userPhone, groupName, msgText, spamTracker,
         stats, reklamMuafMsgIds, deletedAdsLog, saveDeletedLog, io, getDeleteKey, downloadMediaMessage, config
