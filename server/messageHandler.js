@@ -89,15 +89,16 @@ async function kural5dkLimit({ sock, chatId, realUserId, groupName, msg, userId,
   const isPartOfFirst = t.firstAdTime > 0 && (now - t.firstAdTime < 30000);
 
   // Fiyatlı hak henüz kullanılmadıysa ve fiyatlı ilan geldi → koru (hak kullanıldı)
-  if (!t.hasPaid && hasFiyat && !isPartOfFirst) {
+  // isPartOfFirst kontrolü yok — 30sn içinde de fiyatlı hak kullanılabilir
+  if (!t.hasPaid && hasFiyat) {
     t.hasPaid = true;
     t.paidTime = now;
     t.firstAdTime = now; // Fiyatlı ilanın zamanından 5dk say
-    t.count = 1;
+    t.count = 1; // Fiyatlı dönem başladı, sayacı sıfırla
     return 'continue'; // Fiyatlı hak kullanıldı → koru
   }
 
-  // Fiyat varsa hasPaid işaretle
+  // Fiyat varsa hasPaid işaretle (zaten set edilmişse güncelle)
   if (hasFiyat) {
     t.hasPaid = true;
     t.paidTime = now;
