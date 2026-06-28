@@ -379,8 +379,24 @@ async function handleMessage(msg) {
     if (hasMedia) {
       const ctx = { sock, chatId, realUserId, groupName, msg, userId, msgText, hasFiyat, spamTracker, stats, getDeleteKey, config, deletedAdsLog, saveDeletedLog, io, downloadMediaMessage };
 
-      // 1. Fiyatlı resim → fiyatliGonderimIds'e userId ekle (30sn), kural10 kontrol et, 30sn bekle
+      // 1. Fiyatlı resim → spamTracker güncelle, fiyatliGonderimIds'e ekle (30sn), kural10 kontrol et, 30sn bekle
       if (hasFiyat) {
+        // spamTracker başlat/güncelle (hasPaid=true — 5dk kural sonradan aktifleşsin)
+        if (!spamTracker[userId]) {
+          spamTracker[userId] = { count: 0, lastTime: 0, warned10: false, warned10Time: 0, hasPaid: false, paidTime: 0, ozelUyari: false, ozelUyariTime: 0, firstAdTime: 0, adCount: 0 };
+        }
+        const tf = spamTracker[userId];
+        const FIVE_MIN_MS = (config.adIntervalMin || 5) * 60 * 1000;
+        // 5dk dönem geçtiyse sıfırla
+        if (tf.firstAdTime > 0 && Date.now() - tf.firstAdTime > FIVE_MIN_MS) {
+          tf.count = 0; tf.hasPaid = false; tf.adCount = 0; tf.firstAdTime = 0;
+        }
+        tf.lastTime = Date.now();
+        if (tf.adCount === 0) { tf.adCount = 1; tf.firstAdTime = Date.now(); tf.count = 1; }
+        else { tf.count++; }
+        tf.hasPaid = true;
+        tf.paidTime = Date.now();
+
         fiyatliGonderimIds.add(userId);
         setTimeout(() => fiyatliGonderimIds.delete(userId), 30000);
         const res10 = await kural10Limit({ ...ctx, spamTracker });

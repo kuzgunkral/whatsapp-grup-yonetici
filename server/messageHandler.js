@@ -73,22 +73,11 @@ async function kural5dkLimit({ sock, chatId, realUserId, groupName, msg, userId,
     t.adCount = 1;
     t.firstAdTime = now;
     t.count = 1;
-    if (hasFiyat) { t.hasPaid = true; t.paidTime = now; }
     return 'continue';
   }
 
   // Dönem aktifse count artır
   t.count++;
-
-  // Fiyatlı resim gelince hasPaid set et, firstAdTime güncelle
-  if (hasFiyat && !t.hasPaid) {
-    t.hasPaid = true;
-    t.paidTime = now;
-    t.firstAdTime = now;
-    t.count = 1;
-    return 'continue';
-  }
-  if (hasFiyat) { t.hasPaid = true; t.paidTime = now; }
 
   // hasPaid=true ve 5dk içinde → sil
   if (t.hasPaid && t.firstAdTime > 0 && (now - t.firstAdTime < FIVE_MIN)) {
