@@ -762,12 +762,11 @@ app.post('/api/restore-ad', async (req, res) => {
     // null data'lı resimleri filtrele (clear-media-cache sonrası olabilir)
     const validMedia = (ad.medyaListesi || []).filter(m => m && m.data);
     if (validMedia.length > 0) {
-      // Caption yok — sade resim gönder
+      // Caption yok — sade resim gönder, delay yok
       for (let i = 0; i < validMedia.length; i++) {
         const m = validMedia[i];
         const buf = Buffer.from(m.data, 'base64');
         await sock.sendMessage(target, { image: buf, caption: '' });
-        if (i < validMedia.length - 1) await new Promise(r => setTimeout(r, 200));
       }
     } else if (ad.medyaData) {
       const buf = Buffer.from(ad.medyaData, 'base64');
@@ -800,13 +799,12 @@ app.post('/api/restore-as-ad', async (req, res) => {
     const target = groupId || activeGroupId;
     if (!target) return res.json({ success: false, error: 'Hedef grup yok' });
     if (ad.medyaListesi && ad.medyaListesi.length > 0) {
-      // Caption yok — sade resim gönder
+      // Caption yok — sade resim gönder, delay yok
       for (let i = 0; i < ad.medyaListesi.length; i++) {
         const m = ad.medyaListesi[i];
         if (!m || !m.data) continue;
         const buf = Buffer.from(m.data, 'base64');
         await sock.sendMessage(target, { image: buf, caption: '' });
-        if (i < ad.medyaListesi.length - 1) await new Promise(r => setTimeout(r, 300));
       }
     } else if (ad.medyaData) {
       const buf = Buffer.from(ad.medyaData, 'base64');
