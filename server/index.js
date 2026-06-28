@@ -6,7 +6,7 @@ const QRCode = require('qrcode');
 const pino = require('pino');
 const fs = require('fs');
 const path = require('path');
-const { hasFiyatMi, kuralResim, kuralFiyatsizMetin } = require('./messageHandler');
+const { hasFiyatMi, kuralResim, kuralFiyatliResim, kuralFiyatsizMetin } = require('./messageHandler');
 
 let makeWASocket, useMultiFileAuthState, makeCacheableSignalKeyStore;
 
@@ -375,12 +375,21 @@ async function handleMessage(msg) {
     const msgLower = msgText.toLowerCase();
     const hasFiyat = hasFiyatMi(msgText);
 
-    // ── KURAL 1: Resim ilanı ──
+    // ── Resim ilanı ──
     if (hasMedia) {
-      await kuralResim({
-        sock, chatId, msg, userId, userName, userPhone, groupName, msgText,
-        spamTracker, stats, reklamMuafMsgIds, deletedAdsLog, saveDeletedLog, io, getDeleteKey, downloadMediaMessage, config
-      });
+      if (hasFiyat) {
+        // KURAL 2: Fiyatlı toplu resim — kural 1 ile ayrı tracker
+        await kuralFiyatliResim({
+          sock, chatId, msg, userId, userName, userPhone, groupName, msgText,
+          spamTracker, stats, reklamMuafMsgIds, deletedAdsLog, saveDeletedLog, io, getDeleteKey, downloadMediaMessage, config
+        });
+      } else {
+        // KURAL 1: Fiyatsız toplu resim
+        await kuralResim({
+          sock, chatId, msg, userId, userName, userPhone, groupName, msgText,
+          spamTracker, stats, reklamMuafMsgIds, deletedAdsLog, saveDeletedLog, io, getDeleteKey, downloadMediaMessage, config
+        });
+      }
       return;
     }
 

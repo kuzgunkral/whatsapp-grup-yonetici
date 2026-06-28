@@ -136,6 +136,116 @@ async function kuralResim({ sock, chatId, msg, userId, userName, userPhone, grou
   return 'waiting';
 }
 
+// ─── KURAL 2: FIYATLI TOPLU RESİM ────────────────────────────────────────────
+// Fiyatlı resim gelince:
+//   - imgCount sıfırla (kural1 ile karışmasın), yeni sayaç başlat
+//   - 10+ → anında sil
+//   - ≤10 → 30sn bekle, bu kullanıcının son 30sn resimlerinden herhangi birinde fiyat varsa tüm 10'u muaf tut
+// fiyatliResimTracker[userId] = { count, hasFiyat, msgIds: [{key, delKey, msgId}] }
+const fiyatliResimTracker = {}; // modül seviyesinde, bağımsız tracker
+
+async function kuralFiyatliResim({ sock, chatId, msg, userId, userName, userPhone, groupName, msgText, spamTracker, stats, reklamMuafMsgIds, deletedAdsLog, saveDeletedLog, io, getDeleteKey, downloadMediaMessage, config }) {
+  const WAIT_MS = (config.photoWaitSec || 30) * 1000;
+
+  // Fiyatlı resim tracker — bu kullanıcı için yeni toplu gönderim başlat veya devam et
+  if (!fiyatliResimTracker[userId]) fiyatliResimTracker[userId] = { count: 0, hasFiyat: false, pendingMsgs: [] };
+  const ft = fiyatliResimTracker[userId];
+  ft.count++;
+  if (hasFiyatMi(msgText)) ft.hasFiyat = true;
+
+  // 10+ → anında sil
+  if (ft.count > 10) {
+    const delKey = getDeleteKey(msg);
+    const tryDel = async (a) => { try { await sock.sendMessage(chatId, { delete: delKey }); } catch(e) { if (a < 20) setTimeout(() => tryDel(a+1), 3000); } };
+    tryDel(1);
+    stats.messagesDeleted++;
+    console.log(`🗑️ [FIYATLI-10+] user=${userId} count=${ft.count}`);
+    let mediaInfo = null;
+    try { mediaInfo = await downloadMediaMessage(msg); } catch(e) {}
+    deletedAdsLog.unshift({
+      id: Date.now().toString(),
+      tarih: new Date().toLocaleDateString('tr-TR'),
+      saat: new Date().toLocaleTimeString('tr-TR'),
+      timestamp: new Date().toISOString(),
+      kullanici: userName || userPhone,
+      telefon: userPhone,
+      userId,
+      grupId: chatId,
+      grup: groupName,
+      mesaj: msgText || '',
+      sebep: 'Fiyatlı resim 10+ (anında silindi)',
+      topluAdet: 1,
+      medyaData: mediaInfo ? mediaInfo.data : null,
+      medyaMimetype: mediaInfo ? mediaInfo.mimetype : null,
+      medyaListesi: mediaInfo ? [{ data: mediaInfo.data, mimetype: mediaInfo.mimetype, caption: msgText || '' }] : []
+    });
+    if (deletedAdsLog.length > 500) deletedAdsLog.splice(500);
+    saveDeletedLog();
+    io.emit('log', { type: 'deleted', user: userName || userPhone, group: groupName });
+    io.emit('deleted_ads_updated', { total: deletedAdsLog.length });
+    return 'deleted';
+  }
+
+  // ≤10 → pending listeye ekle, 30sn sonra karar ver
+  const delKey = getDeleteKey(msg);
+  const delMsgId = msg.key.id;
+  const delText = msgText;
+  const delUserId = userId;
+  const delChatId = chatId;
+  const delGroupName = groupName;
+  const delUserPhone = userPhone;
+  const delUserName = userName;
+
+  let mediaInfo = null;
+  try { mediaInfo = await downloadMediaMessage(msg); } catch(e) {}
+
+  ft.pendingMsgs.push({ delKey, delMsgId, delText, delChatId, mediaInfo });
+
+  setTimeout(() => {
+    if (reklamMuafMsgIds.has(delMsgId)) { reklamMuafMsgIds.delete(delMsgId); return; }
+    // Bu kullanıcının tracker'ında fiyat varsa → muaf tut
+    const tracker = fiyatliResimTracker[delUserId];
+    if (tracker && tracker.hasFiyat) {
+      console.log(`[FIYATLI-MUAF] user=${delUserId} hasFiyat=true → koru`);
+      return;
+    }
+    // Fiyat yok → sil
+    const tryDel = async (a) => { try { await sock.sendMessage(delChatId, { delete: delKey }); } catch(e) { if (a < 20) setTimeout(() => tryDel(a+1), 3000); } };
+    tryDel(1);
+    stats.messagesDeleted++;
+    deletedAdsLog.unshift({
+      id: Date.now().toString(),
+      tarih: new Date().toLocaleDateString('tr-TR'),
+      saat: new Date().toLocaleTimeString('tr-TR'),
+      timestamp: new Date().toISOString(),
+      kullanici: delUserName || delUserPhone,
+      telefon: delUserPhone,
+      userId: delUserId,
+      grupId: delChatId,
+      grup: delGroupName,
+      mesaj: delText || '',
+      sebep: 'Fiyatlı resim fiyatsız bulundu (30sn)',
+      topluAdet: 1,
+      medyaData: mediaInfo ? mediaInfo.data : null,
+      medyaMimetype: mediaInfo ? mediaInfo.mimetype : null,
+      medyaListesi: mediaInfo ? [{ data: mediaInfo.data, mimetype: mediaInfo.mimetype, caption: delText || '' }] : []
+    });
+    if (deletedAdsLog.length > 500) deletedAdsLog.splice(500);
+    saveDeletedLog();
+    io.emit('log', { type: 'deleted', user: delUserName || delUserPhone, group: delGroupName });
+    io.emit('deleted_ads_updated', { total: deletedAdsLog.length });
+  }, WAIT_MS);
+
+  // 30sn sonra tracker'ı temizle
+  setTimeout(() => {
+    if (fiyatliResimTracker[delUserId]) {
+      fiyatliResimTracker[delUserId] = { count: 0, hasFiyat: false, pendingMsgs: [] };
+    }
+  }, WAIT_MS + 1000);
+
+  return 'waiting';
+}
+
 // ─── KURAL: FIYATSIZ METİN İLANI ─────────────────────────────────────────────
 // 1. kez: grup içinde @mention uyarı + deleteDelay sonra sil
 // 2. kez (15dk içinde): sessiz anında sil
@@ -228,4 +338,4 @@ async function kuralFiyatsizMetin({ sock, chatId, realUserId, groupName, msg, us
   return 'warned';
 }
 
-module.exports = { hasFiyatMi, kuralResim, kuralFiyatsizMetin };
+module.exports = { hasFiyatMi, kuralResim, kuralFiyatliResim, kuralFiyatsizMetin };
