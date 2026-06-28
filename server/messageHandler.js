@@ -114,8 +114,9 @@ async function kuralResim({ sock, chatId, realUserId, msg, userId, userName, use
   setTimeout(async () => {
     if (reklamMuafMsgIds.has(delMsgId)) { reklamMuafMsgIds.delete(delMsgId); return; }
     if (hasFiyatMi(delText)) { return; }
-    // 30sn içinde aynı batch'te fiyatlı resim geldiyse muaf tut
+    // 30sn içinde aynı batch'te fiyatlı resim geldiyse muaf tut (userActiveBatch VEYA fiyatliResimTracker)
     if (userActiveBatch && userActiveBatch[delUserId] && userActiveBatch[delUserId].hasFiyat) { return; }
+    if (fiyatliResimTracker && fiyatliResimTracker[delUserId] && fiyatliResimTracker[delUserId].hasFiyat) { return; }
 
     let mediaInfo = null;
     try { mediaInfo = await downloadMediaMessage(msg); } catch(e) {}
