@@ -42,6 +42,108 @@ function hasFiyatMi(text) {
   );
 }
 
+// ─── KURAL 1: FIYATSIZ TOPLU RESİM ───────────────────────────────────────────
+// Her resim için imgCount artar.
+// imgCount > 10 → anında sil
+// imgCount <= 10 → 30sn bekle, o resmin caption'ında fiyat yoksa sil
+// spamTracker[userId] = { imgCount, imgCountReset }
+async function kuralResim({ sock, chatId, msg, userId, userName, userPhone, groupName, msgText, spamTracker, stats, reklamMuafMsgIds, deletedAdsLog, saveDeletedLog, io, getDeleteKey, downloadMediaMessage, config }) {
+  const now = Date.now();
+  const WAIT_MS = (config.photoWaitSec || 30) * 1000;
+  const RESET_MS = 60 * 1000; // 60sn geçince yeni toplu ilan sayılır
+
+  if (!spamTracker[userId]) spamTracker[userId] = { imgCount: 0, imgCountReset: 0 };
+  const t = spamTracker[userId];
+
+  // 60sn geçtiyse imgCount sıfırla (yeni toplu gönderim)
+  if (now - t.imgCountReset > RESET_MS) {
+    t.imgCount = 0;
+    t.imgCountReset = now;
+  }
+  t.imgCount++;
+
+  // 10'u aştı → anında sil
+  if (t.imgCount > 10) {
+    const delKey = getDeleteKey(msg);
+    const tryDel = async (a) => { try { await sock.sendMessage(chatId, { delete: delKey }); } catch(e) { if (a < 20) setTimeout(() => tryDel(a+1), 3000); } };
+    tryDel(1);
+    stats.messagesDeleted++;
+    console.log(`🗑️ [10+RESİM] user=${userId} count=${t.imgCount}`);
+
+    let mediaInfo = null;
+    try { mediaInfo = await downloadMediaMessage(msg); } catch(e) {}
+    deletedAdsLog.unshift({
+      id: Date.now().toString(),
+      tarih: new Date().toLocaleDateString('tr-TR'),
+      saat: new Date().toLocaleTimeString('tr-TR'),
+      timestamp: new Date().toISOString(),
+      kullanici: userName || userPhone,
+      telefon: userPhone,
+      userId,
+      grupId: chatId,
+      grup: groupName,
+      mesaj: msgText || '',
+      sebep: '10+ resim (anında silindi)',
+      topluAdet: 1,
+      medyaData: mediaInfo ? mediaInfo.data : null,
+      medyaMimetype: mediaInfo ? mediaInfo.mimetype : null,
+      medyaListesi: mediaInfo ? [{ data: mediaInfo.data, mimetype: mediaInfo.mimetype, caption: msgText || '' }] : []
+    });
+    if (deletedAdsLog.length > 500) deletedAdsLog.splice(500);
+    saveDeletedLog();
+    io.emit('log', { type: 'deleted', user: userName || userPhone, group: groupName });
+    io.emit('deleted_ads_updated', { total: deletedAdsLog.length });
+    return 'deleted';
+  }
+
+  // 10 veya altında → 30sn bekle, caption'da fiyat yoksa sil
+  const delKey = getDeleteKey(msg);
+  const delMsgId = msg.key.id;
+  const delText = msgText;
+  const delUserId = userId;
+  const delChatId = chatId;
+  const delGroupName = groupName;
+  const delUserPhone = userPhone;
+  const delUserName = userName;
+
+  let mediaInfo = null;
+  try { mediaInfo = await downloadMediaMessage(msg); } catch(e) {}
+
+  setTimeout(() => {
+    if (reklamMuafMsgIds.has(delMsgId)) { reklamMuafMsgIds.delete(delMsgId); return; }
+    if (hasFiyatMi(delText)) { return; }
+
+    const tryDel = async (a) => { try { await sock.sendMessage(delChatId, { delete: delKey }); } catch(e) { if (a < 20) setTimeout(() => tryDel(a+1), 3000); } };
+    tryDel(1);
+    stats.messagesDeleted++;
+    console.log(`🗑️ [30SN-SİL] user=${delUserId} caption="${(delText||'').substring(0,30)}"`);
+
+    deletedAdsLog.unshift({
+      id: Date.now().toString(),
+      tarih: new Date().toLocaleDateString('tr-TR'),
+      saat: new Date().toLocaleTimeString('tr-TR'),
+      timestamp: new Date().toISOString(),
+      kullanici: delUserName || delUserPhone,
+      telefon: delUserPhone,
+      userId: delUserId,
+      grupId: delChatId,
+      grup: delGroupName,
+      mesaj: delText || '',
+      sebep: 'Fiyatsız resim (30sn)',
+      topluAdet: 1,
+      medyaData: mediaInfo ? mediaInfo.data : null,
+      medyaMimetype: mediaInfo ? mediaInfo.mimetype : null,
+      medyaListesi: mediaInfo ? [{ data: mediaInfo.data, mimetype: mediaInfo.mimetype, caption: delText || '' }] : []
+    });
+    if (deletedAdsLog.length > 500) deletedAdsLog.splice(500);
+    saveDeletedLog();
+    io.emit('log', { type: 'deleted', user: delUserName || delUserPhone, group: delGroupName });
+    io.emit('deleted_ads_updated', { total: deletedAdsLog.length });
+  }, WAIT_MS);
+
+  return 'waiting';
+}
+
 // ─── KURAL: FIYATSIZ METİN İLANI ─────────────────────────────────────────────
 // 1. kez: grup içinde @mention uyarı + deleteDelay sonra sil
 // 2. kez (15dk içinde): sessiz anında sil
@@ -134,4 +236,4 @@ async function kuralFiyatsizMetin({ sock, chatId, realUserId, groupName, msg, us
   return 'warned';
 }
 
-module.exports = { hasFiyatMi, kuralFiyatsizMetin };
+module.exports = { hasFiyatMi, kuralResim, kuralFiyatsizMetin };

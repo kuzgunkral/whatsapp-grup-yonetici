@@ -6,7 +6,7 @@ const QRCode = require('qrcode');
 const pino = require('pino');
 const fs = require('fs');
 const path = require('path');
-const { hasFiyatMi, kuralFiyatsizMetin } = require('./messageHandler');
+const { hasFiyatMi, kuralResim, kuralFiyatsizMetin } = require('./messageHandler');
 
 let makeWASocket, useMultiFileAuthState, makeCacheableSignalKeyStore;
 
@@ -375,8 +375,14 @@ async function handleMessage(msg) {
     const msgLower = msgText.toLowerCase();
     const hasFiyat = hasFiyatMi(msgText);
 
-    // ── Resim mesajları → kural yok, geç ──
-    if (hasMedia) return;
+    // ── KURAL 1: Resim ilanı ──
+    if (hasMedia) {
+      await kuralResim({
+        sock, chatId, msg, userId, userName, userPhone, groupName, msgText,
+        spamTracker, stats, reklamMuafMsgIds, deletedAdsLog, saveDeletedLog, io, getDeleteKey, downloadMediaMessage, config
+      });
+      return;
+    }
 
     // ── Fiyatlı metin → geç ──
     if (hasFiyat) return;
