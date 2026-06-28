@@ -409,6 +409,8 @@ async function handleMessage(msg) {
     }
 
     if (!config.automation.noPrice) return;
+    // Bot ve admin mesajları kurallara tabi değil
+    if (isFromMe || isAdmin) return;
 
     const msgLower = msgText.toLowerCase();
     const hasFiyat = hasFiyatMi(msgText);
