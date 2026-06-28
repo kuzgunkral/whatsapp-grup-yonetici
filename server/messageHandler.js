@@ -47,15 +47,25 @@ function hasFiyatMi(text) {
 // imgCount > 10 → anında sil
 // imgCount <= 10 → 30sn bekle, o resmin caption'ında fiyat yoksa sil
 // spamTracker[userId] = { imgCount, imgCountReset }
-async function kuralResim({ sock, chatId, msg, userId, userName, userPhone, groupName, msgText, spamTracker, stats, reklamMuafMsgIds, deletedAdsLog, saveDeletedLog, io, getDeleteKey, downloadMediaMessage, config }) {
+async function kuralResim({ sock, chatId, realUserId, msg, userId, userName, userPhone, groupName, msgText, spamTracker, stats, reklamMuafMsgIds, deletedAdsLog, saveDeletedLog, io, getDeleteKey, downloadMediaMessage, config }) {
   const WAIT_MS = (config.photoWaitSec || 30) * 1000;
+  const ONE_HOUR = 60 * 60 * 1000;
 
-  if (!spamTracker[userId]) spamTracker[userId] = { imgCount: 0 };
+  if (!spamTracker[userId]) spamTracker[userId] = { imgCount: 0, warn10Time: 0 };
   const t = spamTracker[userId];
   t.imgCount++;
 
-  // 10'u aştı → anında sil
+  // 10'u aştı → uyarı (saatlik 1 kez) + anında sil
   if (t.imgCount > 10) {
+    if (!t.warn10Time || (Date.now() - t.warn10Time > ONE_HOUR)) {
+      t.warn10Time = Date.now();
+      try {
+        await sock.sendMessage(chatId, {
+          text: `⚠️ @${(realUserId||userId).split('@')[0]} 10 adetten fazla resim yükleyemezsiniz.\n\n🛡️ _${groupName} Yönetimi_`,
+          mentions: [realUserId || userId]
+        });
+      } catch(e) {}
+    }
     const delKey = getDeleteKey(msg);
     const tryDel = async (a) => { try { await sock.sendMessage(chatId, { delete: delKey }); } catch(e) { if (a < 20) setTimeout(() => tryDel(a+1), 3000); } };
     tryDel(1);
@@ -136,6 +146,62 @@ async function kuralResim({ sock, chatId, msg, userId, userName, userPhone, grou
   return 'waiting';
 }
 
+// ─── KURAL 3: FIYATLI İLAN SONRASI 5DK SPAM KURAL ───────────────────────────
+// Fiyatlı ilan muaf alınınca paidTime kaydedilir.
+// 5dk içinde gelen her resim anında silinir (fiyatlı veya fiyatsız fark etmez).
+// Tamamen bağımsız — kural1 ve kural2 tracker'larına dokunmaz.
+// spam5dkTracker[userId] = { paidTime }
+const spam5dkTracker = {};
+
+function kural3SetPaidTime(userId) {
+  spam5dkTracker[userId] = { paidTime: Date.now() };
+}
+
+async function kural3Check({ sock, chatId, realUserId, msg, userId, userName, userPhone, groupName, msgText, stats, deletedAdsLog, saveDeletedLog, io, getDeleteKey, downloadMediaMessage, config }) {
+  const now = Date.now();
+  const FIVE_MIN = (config.adIntervalMin || 5) * 60 * 1000;
+
+  const tracker = spam5dkTracker[userId];
+  if (!tracker || !tracker.paidTime) return 'continue';
+  if (now - tracker.paidTime > FIVE_MIN) {
+    // 5dk geçti — temizle
+    delete spam5dkTracker[userId];
+    return 'continue';
+  }
+
+  // 5dk içinde → sessiz anında sil (uyarı yok)
+  const delKey = getDeleteKey(msg);
+  const tryDel = async (a) => { try { await sock.sendMessage(chatId, { delete: delKey }); } catch(e) { if (a < 20) setTimeout(() => tryDel(a+1), 3000); } };
+  tryDel(1);
+  stats.messagesDeleted++;
+  console.log(`🗑️ [5DK-SPAM] user=${userId}`);
+
+  let mediaInfo = null;
+  try { mediaInfo = await downloadMediaMessage(msg); } catch(e) {}
+  deletedAdsLog.unshift({
+    id: Date.now().toString(),
+    tarih: new Date().toLocaleDateString('tr-TR'),
+    saat: new Date().toLocaleTimeString('tr-TR'),
+    timestamp: new Date().toISOString(),
+    kullanici: userName || userPhone,
+    telefon: userPhone,
+    userId,
+    grupId: chatId,
+    grup: groupName,
+    mesaj: msgText || '',
+    sebep: '5dk spam (fiyatlı ilan sonrası)',
+    topluAdet: 1,
+    medyaData: mediaInfo ? mediaInfo.data : null,
+    medyaMimetype: mediaInfo ? mediaInfo.mimetype : null,
+    medyaListesi: mediaInfo ? [{ data: mediaInfo.data, mimetype: mediaInfo.mimetype, caption: msgText || '' }] : []
+  });
+  if (deletedAdsLog.length > 500) deletedAdsLog.splice(500);
+  saveDeletedLog();
+  io.emit('log', { type: 'deleted', user: userName || userPhone, group: groupName });
+  io.emit('deleted_ads_updated', { total: deletedAdsLog.length });
+  return 'deleted';
+}
+
 // ─── KURAL 2: FIYATLI TOPLU RESİM ────────────────────────────────────────────
 // Fiyatlı resim gelince:
 //   - imgCount sıfırla (kural1 ile karışmasın), yeni sayaç başlat
@@ -144,17 +210,27 @@ async function kuralResim({ sock, chatId, msg, userId, userName, userPhone, grou
 // fiyatliResimTracker[userId] = { count, hasFiyat, msgIds: [{key, delKey, msgId}] }
 const fiyatliResimTracker = {}; // modül seviyesinde, bağımsız tracker
 
-async function kuralFiyatliResim({ sock, chatId, msg, userId, userName, userPhone, groupName, msgText, spamTracker, stats, reklamMuafMsgIds, deletedAdsLog, saveDeletedLog, io, getDeleteKey, downloadMediaMessage, config }) {
+async function kuralFiyatliResim({ sock, chatId, realUserId, msg, userId, userName, userPhone, groupName, msgText, spamTracker, stats, reklamMuafMsgIds, deletedAdsLog, saveDeletedLog, io, getDeleteKey, downloadMediaMessage, config }) {
   const WAIT_MS = (config.photoWaitSec || 30) * 1000;
+  const ONE_HOUR = 60 * 60 * 1000;
 
   // Fiyatlı resim tracker — bu kullanıcı için yeni toplu gönderim başlat veya devam et
-  if (!fiyatliResimTracker[userId]) fiyatliResimTracker[userId] = { count: 0, hasFiyat: false, pendingMsgs: [] };
+  if (!fiyatliResimTracker[userId]) fiyatliResimTracker[userId] = { count: 0, hasFiyat: false, pendingMsgs: [], warn10Time: 0 };
   const ft = fiyatliResimTracker[userId];
   ft.count++;
   if (hasFiyatMi(msgText)) ft.hasFiyat = true;
 
-  // 10+ → anında sil
+  // 10+ → uyarı (saatlik 1 kez) + anında sil
   if (ft.count > 10) {
+    if (!ft.warn10Time || (Date.now() - ft.warn10Time > ONE_HOUR)) {
+      ft.warn10Time = Date.now();
+      try {
+        await sock.sendMessage(chatId, {
+          text: `⚠️ @${(realUserId||userId).split('@')[0]} 10 adetten fazla resim yükleyemezsiniz.\n\n🛡️ _${groupName} Yönetimi_`,
+          mentions: [realUserId || userId]
+        });
+      } catch(e) {}
+    }
     const delKey = getDeleteKey(msg);
     const tryDel = async (a) => { try { await sock.sendMessage(chatId, { delete: delKey }); } catch(e) { if (a < 20) setTimeout(() => tryDel(a+1), 3000); } };
     tryDel(1);
@@ -338,4 +414,4 @@ async function kuralFiyatsizMetin({ sock, chatId, realUserId, groupName, msg, us
   return 'warned';
 }
 
-module.exports = { hasFiyatMi, kuralResim, kuralFiyatliResim, kuralFiyatsizMetin };
+module.exports = { hasFiyatMi, kuralResim, kuralFiyatliResim, kural3SetPaidTime, kural3Check, kuralFiyatsizMetin };

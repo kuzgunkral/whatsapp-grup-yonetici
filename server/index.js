@@ -6,7 +6,7 @@ const QRCode = require('qrcode');
 const pino = require('pino');
 const fs = require('fs');
 const path = require('path');
-const { hasFiyatMi, kuralResim, kuralFiyatliResim, kuralFiyatsizMetin } = require('./messageHandler');
+const { hasFiyatMi, kuralResim, kuralFiyatliResim, kural3SetPaidTime, kural3Check, kuralFiyatsizMetin } = require('./messageHandler');
 
 let makeWASocket, useMultiFileAuthState, makeCacheableSignalKeyStore;
 
@@ -377,16 +377,22 @@ async function handleMessage(msg) {
 
     // ── Resim ilanı ──
     if (hasMedia) {
+      // KURAL 3: 5dk spam kontrolü (fiyatlı ilan sonrası) — önce çalışır
+      const res3 = await kural3Check({ sock, chatId, realUserId, msg, userId, userName, userPhone, groupName, msgText, stats, deletedAdsLog, saveDeletedLog, io, getDeleteKey, downloadMediaMessage, config });
+      if (res3 === 'deleted') return;
+
       if (hasFiyat) {
         // KURAL 2: Fiyatlı toplu resim — kural 1 ile ayrı tracker
         await kuralFiyatliResim({
-          sock, chatId, msg, userId, userName, userPhone, groupName, msgText,
+          sock, chatId, realUserId, msg, userId, userName, userPhone, groupName, msgText,
           spamTracker, stats, reklamMuafMsgIds, deletedAdsLog, saveDeletedLog, io, getDeleteKey, downloadMediaMessage, config
         });
+        // Fiyatlı resim muaf olduktan sonra paidTime set et (kural 3 için)
+        kural3SetPaidTime(userId);
       } else {
         // KURAL 1: Fiyatsız toplu resim
         await kuralResim({
-          sock, chatId, msg, userId, userName, userPhone, groupName, msgText,
+          sock, chatId, realUserId, msg, userId, userName, userPhone, groupName, msgText,
           spamTracker, stats, reklamMuafMsgIds, deletedAdsLog, saveDeletedLog, io, getDeleteKey, downloadMediaMessage, config
         });
       }
