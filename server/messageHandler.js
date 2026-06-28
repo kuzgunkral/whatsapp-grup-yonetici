@@ -42,10 +42,32 @@ function hasFiyatMi(text) {
   );
 }
 
+// ─── KULLANICI BAZLI FİYAT PENCERESİ ─────────────────────────────────────────
+// Bir kullanıcı 30sn içinde herhangi bir mesajda fiyat yazdıysa
+// o penceredeki tüm resimleri muaf tut (Kural 1 ve Kural 2 ortak kullanır)
+const userFiyatWindow = {}; // { userId: { hasFiyat, windowStart } }
+
+function setUserFiyatWindow(userId, hasFiyat, waitMs) {
+  if (!userFiyatWindow[userId] || Date.now() - userFiyatWindow[userId].windowStart > waitMs + 2000) {
+    userFiyatWindow[userId] = { hasFiyat: false, windowStart: Date.now() };
+  }
+  if (hasFiyat) userFiyatWindow[userId].hasFiyat = true;
+}
+
+function getUserFiyatWindow(userId, waitMs) {
+  const w = userFiyatWindow[userId];
+  if (!w) return false;
+  if (Date.now() - w.windowStart > waitMs + 2000) {
+    delete userFiyatWindow[userId];
+    return false;
+  }
+  return w.hasFiyat;
+}
+
 // ─── KURAL 1: FIYATSIZ TOPLU RESİM ───────────────────────────────────────────
 // Her resim için imgCount artar.
 // imgCount > 10 → anında sil
-// imgCount <= 10 → 30sn bekle, o resmin caption'ında fiyat yoksa sil
+// imgCount <= 10 → 30sn bekle, pencere içinde herhangi bir fiyat varsa muaf tut
 // spamTracker[userId] = { imgCount, imgCountReset }
 async function kuralResim({ sock, chatId, realUserId, msg, userId, userName, userPhone, groupName, msgText, spamTracker, stats, reklamMuafMsgIds, deletedAdsLog, saveDeletedLog, io, getDeleteKey, downloadMediaMessage, config }) {
   const WAIT_MS = (config.photoWaitSec || 30) * 1000;
@@ -62,6 +84,9 @@ async function kuralResim({ sock, chatId, realUserId, msg, userId, userName, use
   if (!t.windowStart) t.windowStart = Date.now();
 
   t.imgCount++;
+
+  // Kullanıcı fiyat penceresini güncelle
+  setUserFiyatWindow(userId, hasFiyatMi(msgText), WAIT_MS);
 
   // 10'u aştı → uyarı (saatlik 1 kez) + anında sil
   if (t.imgCount > 10) {
@@ -119,7 +144,9 @@ async function kuralResim({ sock, chatId, realUserId, msg, userId, userName, use
   // Medyayı BEKLETME — sadece silme kararı verilince indir (bellek tasarrufu)
   setTimeout(async () => {
     if (reklamMuafMsgIds.has(delMsgId)) { reklamMuafMsgIds.delete(delMsgId); return; }
+    // Caption'da fiyat varsa VEYA kullanıcı bu pencerede başka mesajda fiyat yazdıysa muaf tut
     if (hasFiyatMi(delText)) { return; }
+    if (getUserFiyatWindow(delUserId, WAIT_MS)) { return; }
 
     let mediaInfo = null;
     try { mediaInfo = await downloadMediaMessage(msg); } catch(e) {}
@@ -250,6 +277,9 @@ async function kuralFiyatliResim({ sock, chatId, realUserId, msg, userId, userNa
   const ft = fiyatliResimTracker[userId];
   ft.count++;
   if (hasFiyatMi(msgText)) ft.hasFiyat = true;
+
+  // Kullanıcı fiyat penceresini güncelle — Kural 1'in timeout'ları da görecek
+  setUserFiyatWindow(userId, ft.hasFiyat, WAIT_MS);
 
   // 10+ → uyarı (saatlik 1 kez) + anında sil
   if (ft.count > 10) {
