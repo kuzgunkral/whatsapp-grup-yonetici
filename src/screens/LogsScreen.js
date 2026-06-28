@@ -46,17 +46,11 @@ const LogsScreen = () => {
     Alert.alert('Geri Yükle', `"${(item.mesaj || '').substring(0, 40)}..." gruba gönderilsin mi?`, [
       { text: 'İptal', style: 'cancel' },
       { text: 'Geri Yükle', onPress: () => {
-        // Anlık UI'dan kaldır, API arka planda çalışsın
+        // Anlık olarak hem logs hem filteredLogs'dan kaldır
         setLogs(prev => prev.filter(l => l.id !== item.id));
+        setFilteredLogs(prev => prev.filter(l => l.id !== item.id));
         botBridge.restoreAd(item.id);
       }},
-    ]);
-  };
-
-  const handleRestoreAsAd = (item) => {
-    Alert.alert('Reklam Olarak Yükle', 'Reklam onaylı olarak geri yüklenecek.', [
-      { text: 'İptal', style: 'cancel' },
-      { text: 'Reklam Yükle', onPress: () => botBridge.restoreAsAd(item.id) },
     ]);
   };
 

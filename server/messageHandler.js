@@ -130,26 +130,6 @@ async function kural5dkLimit({ sock, chatId, realUserId, groupName, msg, userId,
         try { if (downloadMediaMessage) mediaInfo5dk = await downloadMediaMessage(msg); } catch(e) {}
       }
 
-      // Aynı toplu ilanın resimleri → son log kaydına bak (30sn penceresi, yavaş net desteği)
-      const existing5dk = deletedAdsLog.length > 0 &&
-        deletedAdsLog[0].grupId === chatId &&
-        deletedAdsLog[0].sebep === '5dk spam' &&
-        (deletedAdsLog[0].userId === realUserId || deletedAdsLog[0].telefon === realUserId.split('@')[0]) &&
-        (Date.now() - new Date(deletedAdsLog[0].timestamp).getTime() < 30000)
-        ? deletedAdsLog[0] : null;
-      if (existing5dk) {
-        existing5dk.topluAdet = (existing5dk.topluAdet || 1) + 1;
-        if (msgText) existing5dk.mesaj = msgText.substring(0, 100);
-        if (mediaInfo5dk) {
-          if (!existing5dk.medyaListesi) existing5dk.medyaListesi = [];
-          existing5dk.medyaListesi.push({ data: mediaInfo5dk.data, mimetype: mediaInfo5dk.mimetype, caption: msgText || '' });
-          if (!existing5dk.medyaData) { existing5dk.medyaData = mediaInfo5dk.data; existing5dk.medyaMimetype = mediaInfo5dk.mimetype; }
-        }
-        saveDeletedLog();
-        io.emit('deleted_ads_updated', { total: deletedAdsLog.length });
-        return 'deleted';
-      }
-
       deletedAdsLog.unshift({
         id: Date.now().toString(),
         tarih: new Date().toLocaleDateString('tr-TR'),
@@ -205,12 +185,12 @@ async function kural10Limit({ sock, chatId, realUserId, groupName, msg, userId, 
       try { if (downloadMediaMessage) mediaInfo10 = await downloadMediaMessage(msg); } catch(e) {}
     }
 
-    // Aynı toplu ilanın resimleri → son log kaydına bak (30sn penceresi)
+    // Aynı toplu ilanın resimleri → son log kaydına bak (10sn penceresi)
     const existing10 = deletedAdsLog.length > 0 &&
       deletedAdsLog[0].grupId === chatId &&
       deletedAdsLog[0].sebep === '10 resim limiti aşıldı' &&
       (deletedAdsLog[0].userId === realUserId || deletedAdsLog[0].telefon === realUserId.split('@')[0]) &&
-      (Date.now() - new Date(deletedAdsLog[0].timestamp).getTime() < 30000)
+      (Date.now() - new Date(deletedAdsLog[0].timestamp).getTime() < 10000)
       ? deletedAdsLog[0] : null;
     if (existing10) {
       existing10.topluAdet = (existing10.topluAdet || 1) + 1;
@@ -288,12 +268,12 @@ async function kuralFiyatsizResim({ sock, chatId, msg, userId, userName, userPho
     tryDel(1);
     stats.messagesDeleted++;
 
-    // Aynı toplu ilanın resimleri → son log kaydına bak (30sn penceresi)
+    // Aynı toplu ilanın resimleri → son log kaydına bak (10sn penceresi)
     const existingFiyatsiz = deletedAdsLog.length > 0 &&
       deletedAdsLog[0].grupId === delChatId &&
       deletedAdsLog[0].sebep === 'Fiyatsız ilan (otomatik)' &&
       (deletedAdsLog[0].userId === delUserId || deletedAdsLog[0].telefon === delUserPhone) &&
-      (Date.now() - new Date(deletedAdsLog[0].timestamp).getTime() < 30000)
+      (Date.now() - new Date(deletedAdsLog[0].timestamp).getTime() < 10000)
       ? deletedAdsLog[0] : null;
     if (existingFiyatsiz) {
       existingFiyatsiz.topluAdet = (existingFiyatsiz.topluAdet || 1) + 1;
