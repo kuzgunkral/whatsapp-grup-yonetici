@@ -68,40 +68,19 @@ async function kural5dkLimit({ sock, chatId, realUserId, groupName, msg, userId,
 
   t.lastTime = now;
 
-  // İlk ilan (fiyatlı veya fiyatsız) — dönem başlat
+  // İlk resim — dönem başlat, devam et
   if (t.adCount === 0) {
     t.adCount = 1;
     t.firstAdTime = now;
     t.count = 1;
-    if (hasFiyat) {
-      t.hasPaid = true;
-      t.paidTime = now;
-      return 'continue'; // İlk fiyatlı → koru
-    }
-    // İlk fiyatsız → dönem başladı, kuralFiyatsizResim halleder
     return 'continue';
   }
 
   // Dönem aktifse count artır
   t.count++;
 
-  // Fiyatlı hak henüz kullanılmadıysa ve fiyatlı ilan geldi → koru
-  if (!t.hasPaid && hasFiyat) {
-    t.hasPaid = true;
-    t.paidTime = now;
-    t.firstAdTime = now;
-    t.count = 1;
-    return 'continue';
-  }
-
-  // Fiyat varsa hasPaid işaretle
-  if (hasFiyat) {
-    t.hasPaid = true;
-    t.paidTime = now;
-  }
-
-  // Fiyatlı hak kullanıldıktan sonra 5dk içinde gelen her resim → sil
-  if (t.hasPaid && t.firstAdTime > 0 && (now - t.firstAdTime < FIVE_MIN) && t.adCount >= 1) {
+  // hasPaid=true ve 5dk içinde → sil
+  if (t.hasPaid && t.firstAdTime > 0 && (now - t.firstAdTime < FIVE_MIN)) {
     // Fiyatlı hak kullanıldı, 5dk içinde tekrar resim atıldı → sil
       if (!t.ozelUyari || (now - t.ozelUyariTime > ONE_HOUR)) {
         t.ozelUyari = true;

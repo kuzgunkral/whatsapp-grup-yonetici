@@ -378,18 +378,22 @@ async function handleMessage(msg) {
     if (hasMedia) {
       const ctx = { sock, chatId, realUserId, groupName, msg, userId, msgText, hasFiyat, spamTracker, stats, getDeleteKey, config, deletedAdsLog, saveDeletedLog, io, downloadMediaMessage };
 
-      // 1. 5dk limit
+      // 1. Fiyatlı resim → hasPaid set et, kural10 kontrol et, koru (5dk kuralına girme)
+      if (hasFiyat) {
+        if (!spamTracker[userId]) spamTracker[userId] = { count: 0, lastTime: 0, warned10: false, warned10Time: 0, hasPaid: false, paidTime: 0, ozelUyari: false, ozelUyariTime: 0, firstAdTime: 0, adCount: 0 };
+        const trk = spamTracker[userId];
+        if (!trk.hasPaid) { trk.hasPaid = true; trk.paidTime = Date.now(); trk.firstAdTime = Date.now(); trk.adCount = 1; trk.count = 1; }
+        trk.lastTime = Date.now();
+        const res10 = await kural10Limit({ ...ctx, spamTracker });
+        if (res10 === 'deleted') return;
+        return; // Fiyatlı resim → koru
+      }
+
+      // 2. Fiyatsız resim → 5dk spam kontrolü
       const res5dk = await kural5dkLimit(ctx);
       if (res5dk === 'deleted') return;
 
-      // 2. Fiyatlı resim → kural10 kontrol et, koru
-      if (hasFiyat) {
-        const res10 = await kural10Limit({ ...ctx, spamTracker });
-        if (res10 === 'deleted') return;
-        return;
-      }
-
-      // 3. Fiyatsız resim → 30sn bekle
+      // 3. Fiyatsız resim, spam değil → 30sn bekle
       await kuralFiyatsizResim({
         sock, chatId, msg, userId, userName, userPhone, groupName, msgText, spamTracker,
         stats, reklamMuafMsgIds, deletedAdsLog, saveDeletedLog, io, getDeleteKey, downloadMediaMessage, config
