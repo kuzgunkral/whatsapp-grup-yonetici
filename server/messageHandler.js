@@ -41,7 +41,7 @@ function hasFiyatMi(text) {
 // imgCount > 10 → anında sil
 // imgCount <= 10 → 30sn bekle, o resmin caption'ında fiyat yoksa sil
 // spamTracker[userId] = { imgCount, warn10Time }
-async function kuralResim({ sock, chatId, realUserId, msg, userId, userName, userPhone, groupName, msgText, spamTracker, stats, reklamMuafMsgIds, deletedAdsLog, saveDeletedLog, io, getDeleteKey, downloadMediaMessage, config, userRecentFiyat }) {
+async function kuralResim({ sock, chatId, realUserId, msg, userId, userName, userPhone, groupName, msgText, spamTracker, stats, reklamMuafMsgIds, deletedAdsLog, saveDeletedLog, io, getDeleteKey, downloadMediaMessage, config }) {
   const WAIT_MS = (config.photoWaitSec || 30) * 1000;
   const ONE_HOUR = 60 * 60 * 1000;
 
@@ -114,8 +114,6 @@ async function kuralResim({ sock, chatId, realUserId, msg, userId, userName, use
   setTimeout(async () => {
     if (reklamMuafMsgIds.has(delMsgId)) { reklamMuafMsgIds.delete(delMsgId); return; }
     if (hasFiyatMi(delText)) { return; }
-    // Kullanıcı bu pencerede herhangi bir mesajda fiyat yazdıysa muaf tut
-    if (userRecentFiyat && userRecentFiyat[delUserId] && userRecentFiyat[delUserId].hasFiyat) { return; }
 
     let mediaInfo = null;
     try { mediaInfo = await downloadMediaMessage(msg); } catch(e) {}
