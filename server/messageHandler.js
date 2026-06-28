@@ -70,10 +70,11 @@ async function kuralResim({
 
   t.imgCount++;
 
-  // 10+ → uyarı (saatlik 1 kez) + anında sil
+  // 10+ → uyarı (saatlik 1 kez, global tracker) + anında sil
   if (t.imgCount > 10) {
-    if (!t.warn10Time || Date.now() - t.warn10Time > ONE_HOUR) {
-      t.warn10Time = Date.now();
+    const gw = globalWarn10Tracker[userId] || 0;
+    if (Date.now() - gw > ONE_HOUR) {
+      globalWarn10Tracker[userId] = Date.now();
       try {
         await sock.sendMessage(chatId, {
           text: `⚠️ @${(realUserId||userId).split('@')[0]} 10 adetten fazla resim yükleyemezsiniz.\n\n🛡️ _${groupName} Yönetimi_`,
@@ -145,6 +146,10 @@ async function kuralResim({
 
   return 'waiting';
 }
+
+// ─── GLOBAL WARN10 TRACKER ────────────────────────────────────────────────────
+// Kural 1 ve Kural 2'nin "10+ resim" uyarısı saatlik 1 kez — ortak tracker
+const globalWarn10Tracker = {};
 
 // ─── KURAL 3: FIYATLI İLAN SONRASI 5DK SPAM ──────────────────────────────────
 // Kural 2 muafiyeti bittikten sonra aktif olur (paidTime set edilince).
@@ -236,10 +241,11 @@ async function kuralFiyatliResim({
   const ft = fiyatliResimTracker[userId];
   ft.count++;
 
-  // 10+ → uyarı (saatlik 1 kez) + anında sil
+  // 10+ → uyarı (saatlik 1 kez, global tracker) + anında sil
   if (ft.count > 10) {
-    if (!ft.warn10Time || Date.now() - ft.warn10Time > ONE_HOUR) {
-      ft.warn10Time = Date.now();
+    const gw = globalWarn10Tracker[userId] || 0;
+    if (Date.now() - gw > ONE_HOUR) {
+      globalWarn10Tracker[userId] = Date.now();
       try {
         await sock.sendMessage(chatId, {
           text: `⚠️ @${(realUserId||userId).split('@')[0]} 10 adetten fazla resim yükleyemezsiniz.\n\n🛡️ _${groupName} Yönetimi_`,
