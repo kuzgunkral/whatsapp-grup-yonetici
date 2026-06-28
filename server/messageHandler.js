@@ -202,8 +202,12 @@ async function kuralFiyatsizResim({ sock, chatId, msg, userId, userName, userPho
   const t = spamTracker[userId];
   const WAIT_MS = (config.photoWaitSec || 30) * 1000;
 
-  // Fiyatsız ama 10+ → anında sil
+  // Fiyatsız ama 10+ → anında sil (ama aynı toplu fiyatlı ilanın parçasıysa koru)
   if (t && t.count > 10) {
+    if (fiyatliGonderimIds && fiyatliGonderimIds.has(userId)) {
+      console.log('[LOG-DEBUG] count>10 ama fiyatliGonderimIds hit → koru');
+      return 'continue';
+    }
     const delKey = getDeleteKey(msg);
     const tryDel = async (a) => { try { await sock.sendMessage(chatId, { delete: delKey }); } catch(e) { if (a < 20) setTimeout(() => tryDel(a+1), 3000); } };
     tryDel(1);
