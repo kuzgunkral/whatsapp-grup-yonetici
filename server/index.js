@@ -412,15 +412,15 @@ async function handleMessage(msg) {
 
     // ── Resim ilanı ──
     if (hasMedia) {
-      // KURAL 3: 5dk spam kontrolü (fiyatlı ilan sonrası) — önce çalışır
+      // KURAL 3: Her resimde önce kontrol edilir (fiyatlı/fiyatsız fark etmez).
+      // Ancak sadece Kural 2 muafiyeti bittikten sonra aktif olur (paidTime set edilince).
+      // Kural 2 muafiyeti süresi içindeyken kural3Check 'continue' döner.
       const res3 = await kural3Check({ sock, chatId, realUserId, msg, userId, userName, userPhone, groupName, msgText, stats, deletedAdsLog, saveDeletedLog, io, getDeleteKey, downloadMediaMessage, config });
       if (res3 === 'deleted') return;
 
       if (hasFiyat) {
-        // KURAL 2: Fiyatlı toplu resim — kural 1 ile ayrı tracker
-        // NOT: kural3SetPaidTime burada ÇAĞRILMIYOR — kuralFiyatliResim içinde
-        // tracker temizlenince (WAIT_MS+1000 sonra) set edilecek, böylece toplu
-        // gönderimin ortasında kural3 devreye girip resimleri silmez.
+        // KURAL 2: Fiyatlı toplu resim
+        // kural3SetPaidTime, 30sn muafiyet penceresi kapandıktan sonra çağrılır
         await kuralFiyatliResim({
           sock, chatId, realUserId, msg, userId, userName, userPhone, groupName, msgText,
           spamTracker, stats, reklamMuafMsgIds, deletedAdsLog, saveDeletedLog, io, getDeleteKey,
