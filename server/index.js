@@ -375,49 +375,30 @@ async function handleMessage(msg) {
     const msgLower = msgText.toLowerCase();
     const hasFiyat = hasFiyatMi(msgText);
 
-    // ── KURAL: Toplu resim işleme ──
+    // ── KURAL: Resim işleme ──
     if (hasMedia) {
-      const ctx = { sock, chatId, realUserId, groupName, msg, userId, msgText, hasFiyat, spamTracker, stats, getDeleteKey, config, deletedAdsLog, saveDeletedLog, io, downloadMediaMessage };
-
-      // 1. Fiyatlı resim → spamTracker güncelle, fiyatliGonderimIds'e ekle (30sn), kural10 kontrol et, 30sn bekle
+      // Fiyatlı resim → fiyatliGonderimIds'e userId ekle (30sn) + spamTracker.hasPaid=true
       if (hasFiyat) {
-        // spamTracker başlat/güncelle (hasPaid=true — 5dk kural sonradan aktifleşsin)
-        if (!spamTracker[userId]) {
-          spamTracker[userId] = { count: 0, lastTime: 0, warned10: false, warned10Time: 0, hasPaid: false, paidTime: 0, ozelUyari: false, ozelUyariTime: 0, firstAdTime: 0, adCount: 0 };
-        }
-        const tf = spamTracker[userId];
-        const FIVE_MIN_MS = (config.adIntervalMin || 5) * 60 * 1000;
-        // 5dk dönem geçtiyse sıfırla
-        if (tf.firstAdTime > 0 && Date.now() - tf.firstAdTime > FIVE_MIN_MS) {
-          tf.count = 0; tf.hasPaid = false; tf.adCount = 0; tf.firstAdTime = 0;
-        }
-        tf.lastTime = Date.now();
-        if (tf.adCount === 0) { tf.adCount = 1; tf.firstAdTime = Date.now(); tf.count = 1; }
-        else { tf.count++; }
-        tf.hasPaid = true;
-        tf.paidTime = Date.now();
-
+        if (!spamTracker[userId]) spamTracker[userId] = { hasPaid: false, paidTime: 0, ozelUyari: false, ozelUyariTime: 0, imgCount: 0, imgCountReset: 0, warned10: false, warned10Time: 0 };
+        spamTracker[userId].hasPaid = true;
+        spamTracker[userId].paidTime = Date.now();
+        spamTracker[userId].ozelUyari = false; // yeni ilan dönemi, uyarı sıfırla
         fiyatliGonderimIds.add(userId);
         setTimeout(() => fiyatliGonderimIds.delete(userId), 30000);
-        const res10 = await kural10Limit({ ...ctx, spamTracker });
-        if (res10 === 'deleted') return;
-        await kuralFiyatsizResim({
-          sock, chatId, msg, userId, userName, userPhone, groupName, msgText, spamTracker,
-          stats, reklamMuafMsgIds, fiyatliGonderimIds, deletedAdsLog, saveDeletedLog, io, getDeleteKey, downloadMediaMessage, config
-        });
-        return;
+      } else {
+        // Fiyatsız resim → 5dk spam kontrolü
+        const res5dk = await kural5dkLimit({ sock, chatId, realUserId, groupName, msg, userId, msgText, spamTracker, stats, getDeleteKey, config, deletedAdsLog, saveDeletedLog, io, downloadMediaMessage });
+        if (res5dk === 'deleted') return;
       }
 
-      // 2. Fiyatsız resim → 5dk spam kontrolü (hasPaid=true && 5dk içinde → anında sil)
-      const res5dk = await kural5dkLimit(ctx);
-      if (res5dk === 'deleted') return;
-
-      // 3. Fiyatsız resim, spam değil → 10 resim limiti + 30sn bekle
-      const res10 = await kural10Limit({ ...ctx, spamTracker });
+      // 10 resim limiti (fiyatlı/fiyatsız hepsi)
+      const res10 = await kural10Limit({ sock, chatId, realUserId, groupName, msg, userId, spamTracker, fiyatliGonderimIds, stats, getDeleteKey, deletedAdsLog, saveDeletedLog, io, downloadMediaMessage });
       if (res10 === 'deleted') return;
+
+      // 30sn bekle, caption'da fiyat yoksa sil
       await kuralFiyatsizResim({
-        sock, chatId, msg, userId, userName, userPhone, groupName, msgText, spamTracker,
-        stats, reklamMuafMsgIds, fiyatliGonderimIds, deletedAdsLog, saveDeletedLog, io, getDeleteKey, downloadMediaMessage, config
+        sock, chatId, msg, userId, userName, userPhone, groupName, msgText,
+        reklamMuafMsgIds, fiyatliGonderimIds, stats, deletedAdsLog, saveDeletedLog, io, getDeleteKey, downloadMediaMessage, config
       });
       return;
     }

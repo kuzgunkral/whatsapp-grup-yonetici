@@ -43,168 +43,160 @@ function hasFiyatMi(text) {
 }
 
 // ─── KURAL 1: 5 DAKİKADA 1 İLAN LİMİTİ ──────────────────────────────────────
-// Aynı kullanıcı 5dk içinde 2. ilan atarsa sil + DM uyarı (1 saatte 1 kez)
-async function kural5dkLimit({ sock, chatId, realUserId, groupName, msg, userId, msgText, hasFiyat, spamTracker, stats, getDeleteKey, config, deletedAdsLog, saveDeletedLog, io, downloadMediaMessage }) {
+// Fiyatlı ilan muaf alındıktan sonra 5dk içinde gelen her resim → anında sil
+// spamTracker[userId] = { hasPaid, paidTime, ozelUyari, ozelUyariTime }
+async function kural5dkLimit({ sock, chatId, realUserId, groupName, msg, userId, msgText, spamTracker, stats, getDeleteKey, config, deletedAdsLog, saveDeletedLog, io, downloadMediaMessage }) {
   const now = Date.now();
-  const ONE_HOUR = 24 * 60 * 60 * 1000; // 24 saatte 1 DM uyarı
+  const ONE_DAY = 24 * 60 * 60 * 1000;
   const FIVE_MIN = (config.adIntervalMin || 5) * 60 * 1000;
 
   if (!spamTracker[userId]) {
-    spamTracker[userId] = { count: 0, lastTime: 0, warned10: false, warned10Time: 0, hasPaid: false, paidTime: 0, ozelUyari: false, ozelUyariTime: 0, firstAdTime: 0, adCount: 0 };
+    spamTracker[userId] = { hasPaid: false, paidTime: 0, ozelUyari: false, ozelUyariTime: 0, imgCount: 0, imgCountReset: 0, warned10: false, warned10Time: 0 };
   }
   const t = spamTracker[userId];
 
-  // 1 saatte bir uyarı flag'lerini sıfırla
-  if (now - t.warned10Time > ONE_HOUR) t.warned10 = false;
-  if (now - t.ozelUyariTime > ONE_HOUR) t.ozelUyari = false;
+  // Uyarı flag'ini günlük sıfırla
+  if (now - t.ozelUyariTime > ONE_DAY) t.ozelUyari = false;
 
-  // 5dk dönem geçtiyse sıfırla
-  if (t.firstAdTime > 0 && now - t.firstAdTime > FIVE_MIN) {
-    t.count = 0;
-    t.hasPaid = false;
-    t.adCount = 0;
-    t.firstAdTime = 0;
-  }
-
-  t.lastTime = now;
-
-  // İlk resim — dönem başlat, devam et
-  if (t.adCount === 0) {
-    t.adCount = 1;
-    t.firstAdTime = now;
-    t.count = 1;
+  // hasPaid yoksa veya 5dk geçtiyse → kural devreye girmesin
+  if (!t.hasPaid || !t.paidTime || (now - t.paidTime > FIVE_MIN)) {
     return 'continue';
   }
 
-  // Dönem aktifse count artır
-  t.count++;
-
-  // hasPaid=true ve 5dk içinde → sil
-  if (t.hasPaid && t.firstAdTime > 0 && (now - t.firstAdTime < FIVE_MIN)) {
-    // Fiyatlı hak kullanıldı, 5dk içinde tekrar resim atıldı → sil
-      if (!t.ozelUyari || (now - t.ozelUyariTime > ONE_HOUR)) {
-        t.ozelUyari = true;
-        t.ozelUyariTime = now;
-        // 24 saatte 1 kez — grup içinde @mention uyarı (DM değil)
-        try {
-          await sock.sendMessage(chatId, {
-            text: `⚠️ @${realUserId.split('@')[0]} ${config.adIntervalMin || 5} dakikada 1 ilan atabilirsiniz. Lütfen bekleyiniz.\n\n🛡️ _${groupName} Yönetimi_`,
-            mentions: [realUserId]
-          });
-        } catch(e) {}
-      }
-      const delKey = getDeleteKey(msg);
-      const tryDel = async (a) => { try { await sock.sendMessage(chatId, { delete: delKey }); } catch(e) { if (a < 20) setTimeout(() => tryDel(a+1), 3000); } };
-      tryDel(1);
-      stats.messagesDeleted++;
-      console.log(`🗑️ [5DK-SİL] user=${realUserId} group=${groupName} msg="${(msgText||'').substring(0,40)}"`);
-
-      // Medyayı indir (geri yükleme için)
-      let mediaInfo5dk = null;
-      if (msg.message?.imageMessage || msg.message?.videoMessage) {
-        try { if (downloadMediaMessage) mediaInfo5dk = await downloadMediaMessage(msg); } catch(e) {}
-      }
-
-      deletedAdsLog.unshift({
-        id: Date.now().toString(),
-        tarih: new Date().toLocaleDateString('tr-TR'),
-        saat: new Date().toLocaleTimeString('tr-TR'),
-        timestamp: new Date().toISOString(),
-        kullanici: msg.pushName || realUserId.split('@')[0],
-        telefon: realUserId.split('@')[0],
-        userId: realUserId,
-        grupId: chatId,
-        grup: groupName,
-        mesaj: msgText || '(ilan)',
-        sebep: '5dk spam',
-        topluAdet: 1,
-        medyaData: mediaInfo5dk ? mediaInfo5dk.data : null,
-        medyaMimetype: mediaInfo5dk ? mediaInfo5dk.mimetype : null,
-        medyaListesi: mediaInfo5dk ? [{ data: mediaInfo5dk.data, mimetype: mediaInfo5dk.mimetype, caption: msgText || '' }] : []
+  // hasPaid=true ve 5dk içinde → anında sil
+  if (!t.ozelUyari) {
+    t.ozelUyari = true;
+    t.ozelUyariTime = now;
+    try {
+      await sock.sendMessage(chatId, {
+        text: `⚠️ @${realUserId.split('@')[0]} ${config.adIntervalMin || 5} dakikada 1 ilan atabilirsiniz. Lütfen bekleyiniz.\n\n🛡️ _${groupName} Yönetimi_`,
+        mentions: [realUserId]
       });
-      if (deletedAdsLog.length > 500) deletedAdsLog.splice(500);
-      saveDeletedLog();
-      io.emit('log', { type: 'deleted', user: msg.pushName || realUserId.split('@')[0], group: groupName });
-      io.emit('deleted_ads_updated', { total: deletedAdsLog.length });
-      return 'deleted';
+    } catch(e) {}
   }
 
-  return 'continue'; // Bu kural devreye girmedi
-}
+  const delKey = getDeleteKey(msg);
+  const tryDel = async (a) => { try { await sock.sendMessage(chatId, { delete: delKey }); } catch(e) { if (a < 20) setTimeout(() => tryDel(a+1), 3000); } };
+  tryDel(1);
+  stats.messagesDeleted++;
+  console.log(`🗑️ [5DK-SİL] user=${realUserId} group=${groupName} msg="${(msgText||'').substring(0,40)}"`);
 
-// ─── KURAL 2: 10 RESİM LİMİTİ (fiyatlı ilanlar için) ───────────────────────
-async function kural10Limit({ sock, chatId, realUserId, groupName, msg, userId, spamTracker, stats, getDeleteKey, deletedAdsLog, saveDeletedLog, io, downloadMediaMessage }) {
-  const t = spamTracker[userId];
-  if (!t || !t.hasPaid) return 'continue';
-  if (t.count > 10) {
-    if (!t.warned10) {
-      t.warned10 = true;
-      t.warned10Time = Date.now();
-      // 24 saatte 1 kez — grup içinde @mention uyarı
-      try {
-        await sock.sendMessage(chatId, {
-          text: `⚠️ @${realUserId.split('@')[0]} Tek seferde 10 adetten fazla resim yükleyemezsiniz.\n\n🛡️ _${groupName} Yönetimi_`,
-          mentions: [realUserId]
-        });
-      } catch(e) {}
-    }
-    const delKey = getDeleteKey(msg);
-    const tryDel = async (a) => { try { await sock.sendMessage(chatId, { delete: delKey }); } catch(e) { if (a < 20) setTimeout(() => tryDel(a+1), 3000); } };
-    tryDel(1);
-    stats.messagesDeleted++;
-    console.log(`🗑️ [10RESİM-SİL] user=${realUserId} group=${groupName}`);
-
-    // Medyayı indir
-    let mediaInfo10 = null;
-    if (msg.message?.imageMessage || msg.message?.videoMessage) {
-      try { if (downloadMediaMessage) mediaInfo10 = await downloadMediaMessage(msg); } catch(e) {}
-    }
-
-    deletedAdsLog.unshift({
-      id: Date.now().toString(),
-      tarih: new Date().toLocaleDateString('tr-TR'),
-      saat: new Date().toLocaleTimeString('tr-TR'),
-      timestamp: new Date().toISOString(),
-      kullanici: msg.pushName || realUserId.split('@')[0],
-      telefon: realUserId.split('@')[0],
-      userId: realUserId,
-      grupId: chatId,
-      grup: groupName,
-      mesaj: '📷 [10+ resim spam]',
-      sebep: '10 resim limiti aşıldı',
-      topluAdet: 1,
-      medyaData: mediaInfo10 ? mediaInfo10.data : null,
-      medyaMimetype: mediaInfo10 ? mediaInfo10.mimetype : null,
-      medyaListesi: mediaInfo10 ? [{ data: mediaInfo10.data, mimetype: mediaInfo10.mimetype, caption: '' }] : []
-    });
-    if (deletedAdsLog.length > 500) deletedAdsLog.splice(500);
-    saveDeletedLog();
-    io.emit('log', { type: 'deleted', user: msg.pushName || realUserId.split('@')[0], group: groupName });
-    io.emit('deleted_ads_updated', { total: deletedAdsLog.length });
-    return 'deleted';
+  let mediaInfo5dk = null;
+  if (msg.message?.imageMessage || msg.message?.videoMessage) {
+    try { if (downloadMediaMessage) mediaInfo5dk = await downloadMediaMessage(msg); } catch(e) {}
   }
-  return 'paid_ok'; // Fiyatlı, 10 veya altında → geç
+
+  deletedAdsLog.unshift({
+    id: Date.now().toString(),
+    tarih: new Date().toLocaleDateString('tr-TR'),
+    saat: new Date().toLocaleTimeString('tr-TR'),
+    timestamp: new Date().toISOString(),
+    kullanici: msg.pushName || realUserId.split('@')[0],
+    telefon: realUserId.split('@')[0],
+    userId: realUserId,
+    grupId: chatId,
+    grup: groupName,
+    mesaj: msgText || '(ilan)',
+    sebep: '5dk spam',
+    topluAdet: 1,
+    medyaData: mediaInfo5dk ? mediaInfo5dk.data : null,
+    medyaMimetype: mediaInfo5dk ? mediaInfo5dk.mimetype : null,
+    medyaListesi: mediaInfo5dk ? [{ data: mediaInfo5dk.data, mimetype: mediaInfo5dk.mimetype, caption: msgText || '' }] : []
+  });
+  if (deletedAdsLog.length > 500) deletedAdsLog.splice(500);
+  saveDeletedLog();
+  io.emit('log', { type: 'deleted', user: msg.pushName || realUserId.split('@')[0], group: groupName });
+  io.emit('deleted_ads_updated', { total: deletedAdsLog.length });
+  return 'deleted';
 }
 
-// ─── KURAL 3: FIYATSIZ RESİM — 30SN BEKLE, CAPTION'DA FIYAT YOKSA SİL ───────
-async function kuralFiyatsizResim({ sock, chatId, msg, userId, userName, userPhone, groupName, msgText, spamTracker, stats, reklamMuafMsgIds, fiyatliGonderimIds, deletedAdsLog, saveDeletedLog, io, getDeleteKey, downloadMediaMessage, config }) {
+// ─── KURAL 2: 10 RESİM LİMİTİ ───────────────────────────────────────────────
+// Her resim için imgCount artar. 10'u geçince → anında sil
+// fiyatliGonderimIds'de userId varsa (fiyatlı toplu ilanın parçası) → koru
+// imgCount her yeni toplu ilan döneminde sıfırlanır (60sn geçince)
+async function kural10Limit({ sock, chatId, realUserId, groupName, msg, userId, spamTracker, fiyatliGonderimIds, stats, getDeleteKey, deletedAdsLog, saveDeletedLog, io, downloadMediaMessage }) {
+  const now = Date.now();
+  const RESET_MS = 60 * 1000; // 60sn geçince yeni toplu ilan sayılır
+
+  if (!spamTracker[userId]) {
+    spamTracker[userId] = { hasPaid: false, paidTime: 0, ozelUyari: false, ozelUyariTime: 0, imgCount: 0, imgCountReset: 0, warned10: false, warned10Time: 0 };
+  }
   const t = spamTracker[userId];
+
+  // 60sn geçtiyse imgCount sıfırla (yeni toplu gönderim başladı)
+  if (now - t.imgCountReset > RESET_MS) {
+    t.imgCount = 0;
+    t.imgCountReset = now;
+    t.warned10 = false;
+  }
+
+  t.imgCount = (t.imgCount || 0) + 1;
+
+  // 10 veya altında → geç
+  if (t.imgCount <= 10) return 'continue';
+
+  // 10'u aştı — fiyatlı toplu ilanın parçasıysa koru
+  if (fiyatliGonderimIds && fiyatliGonderimIds.has(userId)) {
+    console.log('[10LİMİT] fiyatliGonderimIds hit → koru');
+    return 'continue';
+  }
+
+  // 10'u aştı, fiyatsız → sil
+  if (!t.warned10) {
+    t.warned10 = true;
+    t.warned10Time = now;
+    try {
+      await sock.sendMessage(chatId, {
+        text: `⚠️ @${realUserId.split('@')[0]} Tek seferde 10 adetten fazla resim yükleyemezsiniz.\n\n🛡️ _${groupName} Yönetimi_`,
+        mentions: [realUserId]
+      });
+    } catch(e) {}
+  }
+
+  const delKey = getDeleteKey(msg);
+  const tryDel = async (a) => { try { await sock.sendMessage(chatId, { delete: delKey }); } catch(e) { if (a < 20) setTimeout(() => tryDel(a+1), 3000); } };
+  tryDel(1);
+  stats.messagesDeleted++;
+  console.log(`🗑️ [10RESİM-SİL] user=${realUserId} group=${groupName}`);
+
+  let mediaInfo10 = null;
+  if (msg.message?.imageMessage || msg.message?.videoMessage) {
+    try { if (downloadMediaMessage) mediaInfo10 = await downloadMediaMessage(msg); } catch(e) {}
+  }
+
+  deletedAdsLog.unshift({
+    id: Date.now().toString(),
+    tarih: new Date().toLocaleDateString('tr-TR'),
+    saat: new Date().toLocaleTimeString('tr-TR'),
+    timestamp: new Date().toISOString(),
+    kullanici: msg.pushName || realUserId.split('@')[0],
+    telefon: realUserId.split('@')[0],
+    userId: realUserId,
+    grupId: chatId,
+    grup: groupName,
+    mesaj: '📷 [10+ resim spam]',
+    sebep: '10 resim limiti aşıldı',
+    topluAdet: 1,
+    medyaData: mediaInfo10 ? mediaInfo10.data : null,
+    medyaMimetype: mediaInfo10 ? mediaInfo10.mimetype : null,
+    medyaListesi: mediaInfo10 ? [{ data: mediaInfo10.data, mimetype: mediaInfo10.mimetype, caption: '' }] : []
+  });
+  if (deletedAdsLog.length > 500) deletedAdsLog.splice(500);
+  saveDeletedLog();
+  io.emit('log', { type: 'deleted', user: msg.pushName || realUserId.split('@')[0], group: groupName });
+  io.emit('deleted_ads_updated', { total: deletedAdsLog.length });
+  return 'deleted';
+}
+
+// ─── KURAL 3: RESİM — 30SN BEKLE, CAPTION'DA FIYAT YOKSA SİL ────────────────
+// Tüm resimler buraya gelir. 30sn bekler:
+// - reklamMuafMsgIds'de → koru (admin onayladı)
+// - caption'da fiyat var → koru
+// - fiyatliGonderimIds'de userId var → koru (fiyatlı toplu ilanın caption'sız resmi)
+// - aksi halde → sil
+async function kuralFiyatsizResim({ sock, chatId, msg, userId, userName, userPhone, groupName, msgText, reklamMuafMsgIds, fiyatliGonderimIds, stats, deletedAdsLog, saveDeletedLog, io, getDeleteKey, downloadMediaMessage, config }) {
   const WAIT_MS = (config.photoWaitSec || 30) * 1000;
 
-  // Fiyatsız ama 10+ → anında sil (ama aynı toplu fiyatlı ilanın parçasıysa koru)
-  if (t && t.count > 10) {
-    if (fiyatliGonderimIds && fiyatliGonderimIds.has(userId)) {
-      console.log('[LOG-DEBUG] count>10 ama fiyatliGonderimIds hit → koru');
-      return 'continue';
-    }
-    const delKey = getDeleteKey(msg);
-    const tryDel = async (a) => { try { await sock.sendMessage(chatId, { delete: delKey }); } catch(e) { if (a < 20) setTimeout(() => tryDel(a+1), 3000); } };
-    tryDel(1);
-    stats.messagesDeleted++;
-    return 'deleted';
-  }
-
-  // Fiyatsız, ilk 10 → WAIT_MS bekle, sonra caption'da fiyat yoksa sil
   const delKey = getDeleteKey(msg);
   const delMsgId = msg.key.id;
   const delText = msgText;
@@ -219,13 +211,15 @@ async function kuralFiyatsizResim({ sock, chatId, msg, userId, userName, userPho
   try { mediaInfo = await downloadMediaMessage(msg); } catch(e) {}
 
   setTimeout(() => {
-    console.log('[LOG-DEBUG] setTimeout fired, delMsgId=' + delMsgId + ' muaf=' + reklamMuafMsgIds.has(delMsgId) + ' hasFiyat=' + hasFiyatMi(delText));
+    console.log('[30SN] fired msgId=' + delMsgId + ' muaf=' + reklamMuafMsgIds.has(delMsgId) + ' hasFiyat=' + hasFiyatMi(delText) + ' fiyatliIds=' + (fiyatliGonderimIds && fiyatliGonderimIds.has(delUserId)));
+    // Admin onayladı → koru
     if (reklamMuafMsgIds.has(delMsgId)) { reklamMuafMsgIds.delete(delMsgId); return; }
-    // Caption'da fiyat varsa koru
-    if (hasFiyatMi(delText)) { console.log('[LOG-DEBUG] hasFiyat=true, SKIP LOG'); return; }
-    // Aynı toplu fiyatlı ilanın caption'sız resmi → koru
-    if (fiyatliGonderimIds && fiyatliGonderimIds.has(delUserId)) { console.log('[LOG-DEBUG] fiyatliGonderimIds hit → koru'); return; }
+    // Caption'da fiyat var → koru
+    if (hasFiyatMi(delText)) { return; }
+    // Fiyatlı toplu ilanın caption'sız resmi (aynı kullanıcıdan 30sn içinde fiyatlı geldi) → koru
+    if (fiyatliGonderimIds && fiyatliGonderimIds.has(delUserId)) { return; }
 
+    // Sil
     const tryDel = async (a) => { try { await sock.sendMessage(delChatId, { delete: delKey }); } catch(e) { if (a < 20) setTimeout(() => tryDel(a+1), 3000); } };
     tryDel(1);
     stats.messagesDeleted++;
@@ -257,7 +251,7 @@ async function kuralFiyatsizResim({ sock, chatId, msg, userId, userName, userPho
 }
 
 // ─── KURAL 4: FIYATSIZ METİN İLANI ──────────────────────────────────────────
-// 1. kez: DM uyarı + deleteDelay sonra sil
+// 1. kez: grup içinde @mention uyarı + deleteDelay sonra sil
 // 2. kez (15dk içinde): sessiz anında sil
 async function kuralFiyatsizMetin({ sock, chatId, realUserId, groupName, msg, userId, userName, userPhone, msgText, hasMedia, noPriceCounter, deletedAdsLog, saveDeletedLog, io, stats, getDeleteKey, downloadMediaMessage, reklamMuafMsgIds, config }) {
   if (!noPriceCounter[userId]) noPriceCounter[userId] = { warned: false, warnedTime: 0 };
