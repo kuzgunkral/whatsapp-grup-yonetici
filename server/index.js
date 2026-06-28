@@ -472,10 +472,15 @@ async function handleMessage(msg) {
 
       if (k2BatchHasFiyat) {
         // Batch'te fiyatlı resim var → Kural 2 (caption'sız resimler de dahil)
+        // kural3SetPaidTime çağrılınca k2BatchTracker da sıfırla
+        const kural3SetPaidTimeWrapped = (uid) => {
+          kural3SetPaidTime(uid);
+          delete k2BatchTracker[uid];
+        };
         await kuralFiyatliResim({
           sock, chatId, realUserId, msg, userId, userName, userPhone, groupName, msgText,
           stats, reklamMuafMsgIds, deletedAdsLog, saveDeletedLog, io, getDeleteKey,
-          downloadMediaMessage, config, kural3SetPaidTime, k2BatchHasFiyat
+          downloadMediaMessage, config, kural3SetPaidTime: kural3SetPaidTimeWrapped, k2BatchHasFiyat
         });
       } else {
         // Henüz fiyatlı resim yok → Kural 1
