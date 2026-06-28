@@ -8,16 +8,41 @@ const fs = require('fs');
 const path = require('path');
 const { hasFiyatMi, kuralResim, kuralFiyatliResim, kural3SetPaidTime, kural3Check, kuralFiyatsizMetin } = require('./messageHandler');
 
+// ─── GLOBAL HATA YAKALAYICI ──────────────────────────────────────────────────
+// Baileys "closed session" ve diğer unhandled promise hatalarının process'i
+// çökümlememesi için — sadece logla, devam et.
+process.on('unhandledRejection', (reason) => {
+  const msg = (reason && reason.message) ? reason.message : String(reason);
+  console.error('[unhandledRejection]', msg);
+  // Closed session hatası gelirse bağlantıyı yeniden kur
+  if (msg.includes('closed') || msg.includes('Connection Closed') || msg.includes('closed session')) {
+    console.log('[unhandledRejection] Closed session detected, scheduling reconnect...');
+    setTimeout(() => { try { connect(); } catch(e) {} }, 5000);
+  }
+});
+process.on('uncaughtException', (err) => {
+  console.error('[uncaughtException]', err.message);
+});
+
 let makeWASocket, useMultiFileAuthState, makeCacheableSignalKeyStore;
 
+// ─── DATA_DIR (önce belirlenmeli — debugLog buna bağlı) ──────────────────────
+const _rawDataDir = process.env.DATA_DIR || (fs.existsSync('/data') ? '/data' : null);
+const DATA_DIR = _rawDataDir || path.join(__dirname, 'data');
+if (!fs.existsSync(DATA_DIR)) { try { fs.mkdirSync(DATA_DIR, { recursive: true }); } catch(e) {} }
+console.log(`📂 DATA_DIR: ${DATA_DIR}`);
+
+const AUTH_DIR = path.join(DATA_DIR, 'baileys-auth');
+const LOG_FILE = path.join(DATA_DIR, 'deleted-ads-log.json');
+const CONFIG_FILE = path.join(DATA_DIR, 'bot-config.json');
+const ACTIVE_GROUP_FILE = path.join(DATA_DIR, 'active-group.txt');
+
 // ─── DEBUG LOG ────────────────────────────────────────────────────────────────
-const debugLog = (() => {
-  const LOG_PATH = process.env.DATA_DIR ? path.join(process.env.DATA_DIR, 'debug.log') : './debug.log';
-  return (msg) => {
-    const line = `[${new Date().toISOString()}] ${msg}\n`;
-    try { fs.appendFileSync(LOG_PATH, line); } catch(e) {}
-  };
-})();
+const DEBUG_LOG_PATH = () => path.join(DATA_DIR, 'debug.log');
+const debugLog = (msg) => {
+  const line = `[${new Date().toISOString()}] ${msg}\n`;
+  try { fs.appendFileSync(DEBUG_LOG_PATH(), line); } catch(e) {}
+};
 
 const app = express();
 app.use(cors());
@@ -39,7 +64,7 @@ let noPriceTimers = {};
 let contactNames = {};
 let lastSentKeys = {};
 let reklamMuafMsgIds = new Set();
-const fiyatliGonderimIds = new Set(); // Fiyatlı toplu gönderim yapan userId'ler (30sn)
+const fiyatliGonderimIds = new Set();
 const groupMessages = {};
 let deletedAdsLog = [];
 let stats = { messagesDeleted: 0, welcomesSent: 0, rulesReminded: 0, spammersRemoved: 0 };
@@ -53,11 +78,6 @@ let config = {
 };
 let currentQR = null;
 let currentPairingCode = null;
-
-const AUTH_DIR = process.env.DATA_DIR ? path.join(process.env.DATA_DIR, 'baileys-auth') : './baileys-auth';
-const LOG_FILE = process.env.DATA_DIR ? path.join(process.env.DATA_DIR, 'deleted-ads-log.json') : './deleted-ads-log.json';
-const CONFIG_FILE = process.env.DATA_DIR ? path.join(process.env.DATA_DIR, 'bot-config.json') : './bot-config.json';
-const ACTIVE_GROUP_FILE = process.env.DATA_DIR ? path.join(process.env.DATA_DIR, 'active-group.txt') : './active-group.txt';
 
 // Restart'ta aktif grubu dosyadan oku
 try { const saved = fs.readFileSync(ACTIVE_GROUP_FILE, 'utf8').trim(); if (saved) activeGroupId = saved; } catch(e) {}
@@ -157,11 +177,26 @@ async function connect(phoneNumber) {
         isReady = false;
         io.emit('status', { connected: false });
         const code = lastDisconnect?.error?.output?.statusCode;
-        debugLog('Connection closed, statusCode: ' + code);
-        if (code !== 401 && code !== 403 && code !== 405) {
-          setTimeout(() => connect(phoneNumber), 5000);
-        } else {
+        const errMsg = lastDisconnect?.error?.message || '';
+        debugLog('Connection closed, statusCode: ' + code + ' errMsg: ' + errMsg);
+
+        // Auth dizini hâlâ var mı kontrol et — disk mount sorunu varsa logla
+        const authExists = fs.existsSync(AUTH_DIR);
+        const authFiles = authExists ? fs.readdirSync(AUTH_DIR).length : 0;
+        debugLog('Auth dir exists: ' + authExists + ', file count: ' + authFiles);
+
+        if (!authExists || authFiles === 0) {
+          debugLog('⚠️ Auth dizini boş veya yok! DATA_DIR=' + (process.env.DATA_DIR || 'TANIMLI DEĞİL'));
+          io.emit('log', { type: 'error', message: 'Session dosyaları kayboldu, yeniden QR/pairing gerekiyor' });
+        }
+
+        if (code === 401 || code === 403 || code === 405) {
           debugLog('Not reconnecting due to status: ' + code);
+          io.emit('log', { type: 'error', message: 'WhatsApp bağlantısı reddedildi (kod: ' + code + '), yeniden giriş gerekiyor' });
+        } else {
+          const delay = (code === 408 || errMsg.includes('timed out')) ? 10000 : 5000;
+          debugLog('Reconnecting in ' + delay + 'ms...');
+          setTimeout(() => connect(phoneNumber), delay);
         }
       }
       if (connection === 'open') {
@@ -456,13 +491,18 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 // ─── API: STATUS ──────────────────────────────────────────────────────────────
 app.get('/api/status', (req, res) => {
+  const authExists = fs.existsSync(AUTH_DIR);
+  const authFiles = authExists ? fs.readdirSync(AUTH_DIR).length : 0;
   res.json({
     connected: isReady,
     groups: connectedGroups,
     activeGroupId,
     stats,
     config,
-    pairedPhone: isReady && sock?.authState?.creds?.me?.id ? sock.authState.creds.me.id.split(':')[0] : null
+    pairedPhone: isReady && sock?.authState?.creds?.me?.id ? sock.authState.creds.me.id.split(':')[0] : null,
+    dataDir: DATA_DIR,
+    authDirExists: authExists,
+    authFileCount: authFiles
   });
 });
 
@@ -480,7 +520,7 @@ app.post('/api/connect', async (req, res) => {
 // ─── API: DEBUG LOG ───────────────────────────────────────────────────────────
 app.get('/api/debug-log', (req, res) => {
   try {
-    const LOG_PATH = process.env.DATA_DIR ? path.join(process.env.DATA_DIR, 'debug.log') : './debug.log';
+    const LOG_PATH = DEBUG_LOG_PATH();
     if (fs.existsSync(LOG_PATH)) {
       const content = fs.readFileSync(LOG_PATH, 'utf8');
       const lines = content.split('\n').filter(Boolean);
@@ -493,8 +533,7 @@ app.get('/api/debug-log', (req, res) => {
 
 app.delete('/api/debug-log', (req, res) => {
   try {
-    const LOG_PATH = process.env.DATA_DIR ? path.join(process.env.DATA_DIR, 'debug.log') : './debug.log';
-    fs.writeFileSync(LOG_PATH, '', 'utf8');
+    fs.writeFileSync(DEBUG_LOG_PATH(), '', 'utf8');
     res.json({ success: true });
   } catch(e) { res.json({ success: false }); }
 });

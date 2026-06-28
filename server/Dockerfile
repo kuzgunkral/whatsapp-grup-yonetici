@@ -4,4 +4,6 @@ WORKDIR /app
 COPY package.json .
 RUN npm install
 COPY . .
+RUN mkdir -p /data
+ENV DATA_DIR=/data
 CMD ["node", "index.js"]
