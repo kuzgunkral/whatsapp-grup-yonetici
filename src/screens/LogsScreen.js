@@ -45,7 +45,11 @@ const LogsScreen = () => {
   const handleRestore = (item) => {
     Alert.alert('Geri Yükle', `"${(item.mesaj || '').substring(0, 40)}..." gruba gönderilsin mi?`, [
       { text: 'İptal', style: 'cancel' },
-      { text: 'Geri Yükle', onPress: () => botBridge.restoreAd(item.id) },
+      { text: 'Geri Yükle', onPress: () => {
+        // Anlık UI'dan kaldır, API arka planda çalışsın
+        setLogs(prev => prev.filter(l => l.id !== item.id));
+        botBridge.restoreAd(item.id);
+      }},
     ]);
   };
 
