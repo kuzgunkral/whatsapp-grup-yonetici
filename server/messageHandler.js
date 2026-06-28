@@ -58,7 +58,7 @@ async function kural5dkLimit({ sock, chatId, realUserId, groupName, msg, userId,
   if (now - t.warned10Time > ONE_HOUR) t.warned10 = false;
   if (now - t.ozelUyariTime > ONE_HOUR) t.ozelUyari = false;
 
-  // Fiyatlı dönem geçtiyse sıfırla (sadece fiyatlı ilanın firstAdTime'ı sayılır)
+  // 5dk dönem geçtiyse sıfırla
   if (t.firstAdTime > 0 && now - t.firstAdTime > FIVE_MIN) {
     t.count = 0;
     t.hasPaid = false;
@@ -68,19 +68,33 @@ async function kural5dkLimit({ sock, chatId, realUserId, groupName, msg, userId,
 
   t.lastTime = now;
 
-  // İlk fiyatlı ilan başlangıcı — sadece fiyatlı gelince dönem başlar
-  if (hasFiyat && t.adCount === 0) {
+  // İlk ilan (fiyatlı veya fiyatsız) — dönem başlat
+  if (t.adCount === 0) {
     t.adCount = 1;
     t.firstAdTime = now;
-    t.count = 1; // Fiyatlı dönem başladı, sayacı 1'den başlat
-    t.hasPaid = true;
-    t.paidTime = now;
-    return 'continue'; // İlk fiyatlı ilan, devam et
+    t.count = 1;
+    if (hasFiyat) {
+      t.hasPaid = true;
+      t.paidTime = now;
+      return 'continue'; // İlk fiyatlı → koru
+    }
+    // İlk fiyatsız → dönem başladı, kuralFiyatsizResim halleder
+    return 'continue';
   }
 
-  // Fiyatlı dönem aktifse count'u artır (sadece fiyatlı dönem resimlerini say)
-  if (t.firstAdTime > 0) {
-    t.count++;
+  // Dönem aktifse count artır
+  t.count++;
+
+  // 30sn içinde gelenler aynı toplu ilanın resimleri
+  const isPartOfFirst = t.firstAdTime > 0 && (now - t.firstAdTime < 30000);
+
+  // Fiyatlı hak henüz kullanılmadıysa ve fiyatlı ilan geldi → koru (hak kullanıldı)
+  if (!t.hasPaid && hasFiyat && !isPartOfFirst) {
+    t.hasPaid = true;
+    t.paidTime = now;
+    t.firstAdTime = now; // Fiyatlı ilanın zamanından 5dk say
+    t.count = 1;
+    return 'continue'; // Fiyatlı hak kullanıldı → koru
   }
 
   // Fiyat varsa hasPaid işaretle
@@ -89,18 +103,9 @@ async function kural5dkLimit({ sock, chatId, realUserId, groupName, msg, userId,
     t.paidTime = now;
   }
 
-  // Fiyatsız ilan — henüz fiyatlı ilan atılmamışsa bu kural devreye girmez
-  // (kuralFiyatsizResim veya kuralFiyatsizMetin halleder)
-  if (!hasFiyat && t.adCount === 0) {
-    return 'continue';
-  }
-
-  // 30sn içinde gelenler aynı toplu ilan (WhatsApp toplu resim gönderimi)
-  const isPartOfFirst = t.firstAdTime > 0 && (now - t.firstAdTime < 30000);
-
-  // 2. ilan — 5dk dolmadan tekrar resim (fiyatlı veya fiyatsız) → anında sil
-  if (!isPartOfFirst && t.firstAdTime > 0 && (now - t.firstAdTime < FIVE_MIN) && t.adCount >= 1) {
-    // Her türlü resim ilanı 5dk içinde tekrar atılırsa sil
+  // 2. ilan — fiyatlı hak kullanıldıktan sonra 5dk içinde tekrar resim → sil
+  if (!isPartOfFirst && t.hasPaid && t.firstAdTime > 0 && (now - t.firstAdTime < FIVE_MIN) && t.adCount >= 1) {
+    // Fiyatlı hak kullanıldı, 5dk içinde tekrar resim atıldı → sil
       if (!t.ozelUyari || (now - t.ozelUyariTime > ONE_HOUR)) {
         t.ozelUyari = true;
         t.ozelUyariTime = now;
