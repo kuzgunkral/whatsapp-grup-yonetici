@@ -539,12 +539,7 @@ async function handleMessage(msg) {
         await kuralResim({
           sock, chatId, realUserId, msg, userId, userName, userPhone, groupName, msgText,
           spamTracker, stats, reklamMuafMsgIds, deletedAdsLog, saveDeletedLog, io, getDeleteKey,
-          downloadMediaMessage, config,
-          getK2BatchHasFiyat: (uid) => {
-            const t2 = k2BatchTracker[uid];
-            const WAIT_MS_CHECK = (config.photoWaitSec || 30) * 1000;
-            return !!(t2 && t2.hasFiyat && Date.now() - t2.windowStart <= WAIT_MS_CHECK + 2000);
-          }
+          downloadMediaMessage, config
         });
       }
       return;

@@ -155,7 +155,7 @@ async function addMediaToBatch({ batchKey, msg, caption, deletedAdsLog }) {
 async function kuralResim({
   sock, chatId, realUserId, msg, userId, userName, userPhone, groupName, msgText,
   spamTracker, stats, reklamMuafMsgIds, deletedAdsLog, saveDeletedLog, io,
-  getDeleteKey, downloadMediaMessage, config, getK2BatchHasFiyat
+  getDeleteKey, downloadMediaMessage, config
 }) {
   const WAIT_MS = (config.photoWaitSec || 30) * 1000;
   const ONE_HOUR = 60 * 60 * 1000;
@@ -227,8 +227,6 @@ async function kuralResim({
   setTimeout(async () => {
     if (reklamMuafMsgIds.has(delMsgId)) { reklamMuafMsgIds.delete(delMsgId); return; }
     if (hasFiyatMi(delText)) return;
-    // Aynı batch'te fiyatlı resim varsa (albüm senaryosu: race condition önleme) → koru
-    if (typeof getK2BatchHasFiyat === 'function' && getK2BatchHasFiyat(delUserId)) return;
 
     const tryDel = async (a) => { try { await sock.sendMessage(delChatId, { delete: delKey }); } catch(e) { if (a < 3) setTimeout(() => tryDel(a+1), 5000); } };
     tryDel(1);
