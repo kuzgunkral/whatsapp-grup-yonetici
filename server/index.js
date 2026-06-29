@@ -995,17 +995,34 @@ app.post('/api/restore-ad', async (req, res) => {
           mediaItems.push({ buf, isVideo, rawCaption });
         }
         if (mediaItems.length === 0) { result = { success: false, error: 'Geri yüklenecek içerik yok' }; return; }
-        // Caption sadece ilk resimde — boşsa ad.mesaj'a bak
         const firstCaption = mediaItems[0].rawCaption || ad.mesaj || '';
-        // Tüm resimleri delay=0 ile art arda gönder → WhatsApp albüm olarak gruplar
-        for (let i = 0; i < mediaItems.length; i++) {
-          const item = mediaItems[i];
-          const caption = i === 0 ? firstCaption : '';
+        if (mediaItems.length === 1) {
+          // Tek resim — albüm gereksiz
+          const item = mediaItems[0];
           const sent = await sock.sendMessage(target, item.isVideo
-            ? { video: item.buf, caption }
-            : { image: item.buf, caption }
+            ? { video: item.buf, caption: firstCaption }
+            : { image: item.buf, caption: firstCaption }
           );
           if (sent && sent.key && sent.key.id) reklamMuafMsgIds.add(sent.key.id);
+        } else {
+          // Çoklu resim — Baileys album API
+          const imageCount = mediaItems.filter(i => !i.isVideo).length;
+          const videoCount = mediaItems.filter(i => i.isVideo).length;
+          const albumSent = await sock.sendMessage(target, {
+            album: { expectedImageCount: imageCount, expectedVideoCount: videoCount }
+          });
+          const albumParentKey = albumSent && albumSent.key ? albumSent.key : null;
+          if (albumSent && albumSent.key && albumSent.key.id) reklamMuafMsgIds.add(albumSent.key.id);
+          for (let i = 0; i < mediaItems.length; i++) {
+            const item = mediaItems[i];
+            const caption = i === 0 ? firstCaption : '';
+            const msgPayload = item.isVideo
+              ? { video: item.buf, caption }
+              : { image: item.buf, caption };
+            if (albumParentKey) msgPayload.albumParentKey = albumParentKey;
+            const sent = await sock.sendMessage(target, msgPayload);
+            if (sent && sent.key && sent.key.id) reklamMuafMsgIds.add(sent.key.id);
+          }
         }
       } else if (ad.mesaj) {
         const sent = await sock.sendMessage(target, { text: ad.mesaj });
@@ -1051,14 +1068,32 @@ app.post('/api/restore-as-ad', async (req, res) => {
       }
       if (mediaItems.length > 0) {
         const firstCaption = mediaItems[0].rawCaption || ad.mesaj || '';
-        for (let i = 0; i < mediaItems.length; i++) {
-          const item = mediaItems[i];
-          const caption = i === 0 ? firstCaption : '';
+        if (mediaItems.length === 1) {
+          const item = mediaItems[0];
           const sent = await sock.sendMessage(target, item.isVideo
-            ? { video: item.buf, caption }
-            : { image: item.buf, caption }
+            ? { video: item.buf, caption: firstCaption }
+            : { image: item.buf, caption: firstCaption }
           );
           if (sent && sent.key && sent.key.id) reklamMuafMsgIds.add(sent.key.id);
+        } else {
+          // Baileys album API
+          const imageCount = mediaItems.filter(i => !i.isVideo).length;
+          const videoCount = mediaItems.filter(i => i.isVideo).length;
+          const albumSent = await sock.sendMessage(target, {
+            album: { expectedImageCount: imageCount, expectedVideoCount: videoCount }
+          });
+          const albumParentKey = albumSent && albumSent.key ? albumSent.key : null;
+          if (albumSent && albumSent.key && albumSent.key.id) reklamMuafMsgIds.add(albumSent.key.id);
+          for (let i = 0; i < mediaItems.length; i++) {
+            const item = mediaItems[i];
+            const caption = i === 0 ? firstCaption : '';
+            const msgPayload = item.isVideo
+              ? { video: item.buf, caption }
+              : { image: item.buf, caption };
+            if (albumParentKey) msgPayload.albumParentKey = albumParentKey;
+            const sent = await sock.sendMessage(target, msgPayload);
+            if (sent && sent.key && sent.key.id) reklamMuafMsgIds.add(sent.key.id);
+          }
         }
       }
     } else if (ad.mesaj) {
