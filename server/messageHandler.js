@@ -351,7 +351,7 @@ async function kuralFiyatliResim({
 
     // K2-10+ kendi batch'inde — K3 ile karıştırma
     getOrCreateBatchLog({ batchKey, deletedAdsLog, userId, userName, userPhone, chatId, groupName, sebep: 'Fiyatlı resim (10+ adet)' });
-    await addMediaToBatch({ batchKey, msg, caption: msgText, deletedAdsLog });
+    await addMediaToBatch({ batchKey, msg, caption: msgText || 'muaf', deletedAdsLog });
     saveDeletedLog();
     io.emit('log', { type: 'deleted', user: userName || userPhone, group: groupName });
     io.emit('deleted_ads_updated', { total: deletedAdsLog.length });

@@ -951,6 +951,13 @@ app.post('/api/restore-ad', async (req, res) => {
         const sent = await sock.sendMessage(target, { text: ad.mesaj });
         if (sent && sent.key && sent.key.id) reklamMuafMsgIds.add(sent.key.id);
       } else { result = { success: false, error: 'Geri yüklenecek içerik yok' }; return; }
+      // Restore sonrası kullanıcının K1 ve K2 sayaçlarını sıfırla —
+      // geri yüklenen resimler bir sonraki ilanda eski sayaca eklenmesin
+      if (ad.userId) {
+        delete spamTracker[ad.userId];
+        delete k2BatchTracker[ad.userId];
+        kural3ResetUser(ad.userId);
+      }
       deletedAdsLog = deletedAdsLog.filter(a => a.id !== lookupId);
       saveDeletedLog();
       io.emit('deleted_ads_updated', { total: deletedAdsLog.length });
