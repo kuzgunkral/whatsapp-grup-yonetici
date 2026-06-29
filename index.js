@@ -712,26 +712,79 @@ app.post('/api/send-announcement', async (req, res) => {
   } catch(e) { res.json({ success: false, error: e.message }); }
 });
 
+// ─── YARDIMCI: mesajı muaf mı? (restore edilmiş veya log'dan yüklenen) ────────
+function isMuafMsg(m) {
+  if (!m || !m.key || !m.key.id) return false;
+  return reklamMuafMsgIds.has(m.key.id);
+}
+
+// ─── YARDIMCI: mesaj son 6 saat içinde mi? ───────────────────────────────────
+function isSon6Saat(m) {
+  const SIX_HOURS = 6 * 60 * 60 * 1000;
+  const ts = (m.messageTimestamp || 0) * 1000;
+  return (Date.now() - ts) < SIX_HOURS;
+}
+
+// ─── YARDIMCI: mesaj metnini çıkar ───────────────────────────────────────────
+function getMsgText(m) {
+  if (!m || !m.message) return '';
+  return m.message.conversation || m.message?.extendedTextMessage?.text ||
+    m.message?.imageMessage?.caption || m.message?.videoMessage?.caption ||
+    m.message?.documentMessage?.caption || '';
+}
+
 // ─── API: CLEAN NO PRICE ─────────────────────────────────────────────────────
+// Son 6 saati tarar; muaf, fiyatlı ve restore edilenler hariç fiyatsızları siler
 app.post('/api/clean-no-price', async (req, res) => {
   if (!isReady || !activeGroupId) return res.json({ success: false });
-  const msgs = groupMessages[activeGroupId] || [];
+  const msgs = (groupMessages[activeGroupId] || []).filter(isSon6Saat);
   let deleted = 0;
   for (const m of msgs) {
     try {
-      let text = m.message?.conversation || m.message?.extendedTextMessage?.text ||
-        m.message?.imageMessage?.caption || m.message?.videoMessage?.caption || '';
-      if (!hasFiyatMi(text)) {
-        await sock.sendMessage(activeGroupId, { delete: getDeleteKey(m) });
-        deleted++;
-        stats.messagesDeleted++;
-        await new Promise(r => setTimeout(r, 200));
-      }
+      if (isMuafMsg(m)) continue;               // restore edilmiş → atla
+      const text = getMsgText(m);
+      if (hasFiyatMi(text)) continue;            // fiyatlı → atla
+      await sock.sendMessage(activeGroupId, { delete: getDeleteKey(m) });
+      deleted++;
+      stats.messagesDeleted++;
+      await new Promise(r => setTimeout(r, 200));
     } catch(e) {}
   }
-  groupMessages[activeGroupId] = [];
+  // Silinen mesajları cache'den çıkar
+  groupMessages[activeGroupId] = (groupMessages[activeGroupId] || []).filter(m => !isSon6Saat(m) || isMuafMsg(m) || hasFiyatMi(getMsgText(m)));
   res.json({ success: true, deleted, count: deleted });
 });
+
+// ─── PERİYODİK TARAMA: her dakika son 6 saati tara ───────────────────────────
+// Fiyatsız + muaf olmayan + log'da olmayan ilanları siler
+// config.automation.noPrice kapalıysa çalışmaz
+let periodicScanActive = false;
+async function periodicNoPriceScan() {
+  if (!isReady || !activeGroupId || !config.automation.noPrice) return;
+  if (periodicScanActive) return; // önceki tarama bitmemişse atla
+  periodicScanActive = true;
+  try {
+    const msgs = (groupMessages[activeGroupId] || []).filter(isSon6Saat);
+    for (const m of msgs) {
+      try {
+        if (isMuafMsg(m)) continue;              // muaf → atla
+        const text = getMsgText(m);
+        if (hasFiyatMi(text)) continue;           // fiyatlı → atla
+        // Log'da bu mesaj ID'si var mı? (restore edilmiş olabilir)
+        const msgId = m.key && m.key.id;
+        if (msgId && deletedAdsLog.some(a =>
+          a.medyaListesi && a.medyaListesi.some(ml => ml.file && ml.file.includes(msgId))
+        )) continue;
+        await sock.sendMessage(activeGroupId, { delete: getDeleteKey(m) });
+        stats.messagesDeleted++;
+        await new Promise(r => setTimeout(r, 300));
+      } catch(e) {}
+    }
+  } catch(e) {}
+  periodicScanActive = false;
+}
+// Her dakika çalıştır
+setInterval(periodicNoPriceScan, 60 * 1000);
 
 // ─── API: AUTOMATION ──────────────────────────────────────────────────────────
 app.post('/api/automation', (req, res) => {
@@ -808,6 +861,24 @@ app.post('/api/open-group', async (req, res) => {
   try {
     await sock.groupSettingUpdate(groupId, 'not_announcement');
     res.json({ success: true });
+  } catch(e) { res.json({ success: false, error: e.message }); }
+});
+
+// ─── API: TOGGLE GROUP (aç/kapat tek buton) ──────────────────────────────────
+app.post('/api/toggle-group', async (req, res) => {
+  if (!isReady) return res.json({ success: false, error: 'Bağlı değil' });
+  const groupId = req.body.groupId || activeGroupId;
+  if (!groupId) return res.json({ success: false, error: 'Grup yok' });
+  try {
+    const meta = await sock.groupMetadata(groupId);
+    const isClosed = meta.announce === true || meta.announce === 'true';
+    if (isClosed) {
+      await sock.groupSettingUpdate(groupId, 'not_announcement');
+      res.json({ success: true, closed: false });
+    } else {
+      await sock.groupSettingUpdate(groupId, 'announcement');
+      res.json({ success: true, closed: true });
+    }
   } catch(e) { res.json({ success: false, error: e.message }); }
 });
 
@@ -931,20 +1002,48 @@ app.post('/api/restore-ad', async (req, res) => {
     try {
       const validMedia = (ad.medyaListesi || []).filter(m => m && m.file);
       if (validMedia.length > 0) {
-        // Caption sadece ilk resimde — WhatsApp sonraki resimleri aynı "albüm"de gruplar
-        let firstCaption = true;
-        for (const m of validMedia) {
-          const buf = readMediaFile(m.file);
-          if (!buf) continue;
-          const isVideo = m.mimetype && m.mimetype.startsWith('video');
-          const caption = firstCaption ? (m.caption || ad.mesaj || '') : '';
-          firstCaption = false;
-          const sent = await sock.sendMessage(target, isVideo
-            ? { video: buf, caption }
-            : { image: buf, caption }
-          );
-          if (sent && sent.key && sent.key.id) reklamMuafMsgIds.add(sent.key.id);
-          await new Promise(r => setTimeout(r, 100));
+        // Meta verileri topla (buf yok — RAM tasarrufu)
+        const metaItems = validMedia.map(m => ({
+          file: m.file,
+          isVideo: !!(m.mimetype && m.mimetype.startsWith('video')),
+          rawCaption: (m.caption && m.caption !== 'muaf') ? m.caption : ''
+        }));
+        if (metaItems.length === 0) { result = { success: false, error: 'Geri yüklenecek içerik yok' }; return; }
+        const firstValidMeta = metaItems.find(i => !!readMediaFile(i.file));
+        if (!firstValidMeta) { result = { success: false, error: 'Geri yüklenecek içerik yok' }; return; }
+        const firstCaption = firstValidMeta.rawCaption || ad.mesaj || '';
+        if (metaItems.length === 1) {
+          // Tek resim — albüm gereksiz
+          const buf = readMediaFile(metaItems[0].file);
+          if (buf) {
+            const sent = await sock.sendMessage(target, metaItems[0].isVideo
+              ? { video: buf, caption: firstCaption }
+              : { image: buf, caption: firstCaption }
+            );
+            if (sent && sent.key && sent.key.id) reklamMuafMsgIds.add(sent.key.id);
+          }
+        } else {
+          // Çoklu resim — Baileys album API
+          const imageCount = metaItems.filter(i => !i.isVideo).length;
+          const videoCount = metaItems.filter(i => i.isVideo).length;
+          const albumSent = await sock.sendMessage(target, {
+            album: { expectedImageCount: imageCount, expectedVideoCount: videoCount }
+          });
+          const albumParentKey = albumSent && albumSent.key ? albumSent.key : null;
+          if (albumSent && albumSent.key && albumSent.key.id) reklamMuafMsgIds.add(albumSent.key.id);
+          let isFirst = true;
+          for (const meta of metaItems) {
+            const buf = readMediaFile(meta.file);
+            if (!buf) continue;
+            const caption = isFirst ? firstCaption : '';
+            isFirst = false;
+            const msgPayload = meta.isVideo
+              ? { video: buf, caption }
+              : { image: buf, caption };
+            if (albumParentKey) msgPayload.albumParentKey = albumParentKey;
+            const sent = await sock.sendMessage(target, msgPayload);
+            if (sent && sent.key && sent.key.id) reklamMuafMsgIds.add(sent.key.id);
+          }
         }
       } else if (ad.mesaj) {
         const sent = await sock.sendMessage(target, { text: ad.mesaj });
@@ -979,20 +1078,45 @@ app.post('/api/restore-as-ad', async (req, res) => {
     if (!target) return res.json({ success: false, error: 'Hedef grup yok' });
     const validMedia = (ad.medyaListesi || []).filter(m => m && m.file);
     if (validMedia.length > 0) {
-      // Caption sadece ilk resimde — WhatsApp sonraki resimleri aynı "albüm"de gruplar
-      let firstCaption = true;
-      for (const m of validMedia) {
-        const buf = readMediaFile(m.file);
-        if (!buf) continue;
-        const isVideo = m.mimetype && m.mimetype.startsWith('video');
-        const caption = firstCaption ? (m.caption || ad.mesaj || '') : '';
-        firstCaption = false;
-        const sent = await sock.sendMessage(target, isVideo
-          ? { video: buf, caption }
-          : { image: buf, caption }
-        );
-        if (sent && sent.key && sent.key.id) reklamMuafMsgIds.add(sent.key.id);
-        await new Promise(r => setTimeout(r, 100));
+      const metaItems = validMedia.map(m => ({
+        file: m.file,
+        isVideo: !!(m.mimetype && m.mimetype.startsWith('video')),
+        rawCaption: (m.caption && m.caption !== 'muaf') ? m.caption : ''
+      }));
+      if (metaItems.length > 0) {
+        const firstValidM = metaItems.find(i => !!readMediaFile(i.file));
+        const firstCaption = firstValidM ? (firstValidM.rawCaption || ad.mesaj || '') : (ad.mesaj || '');
+        if (metaItems.length === 1) {
+          const buf = readMediaFile(metaItems[0].file);
+          if (buf) {
+            const sent = await sock.sendMessage(target, metaItems[0].isVideo
+              ? { video: buf, caption: firstCaption }
+              : { image: buf, caption: firstCaption }
+            );
+            if (sent && sent.key && sent.key.id) reklamMuafMsgIds.add(sent.key.id);
+          }
+        } else {
+          const imageCount = metaItems.filter(i => !i.isVideo).length;
+          const videoCount = metaItems.filter(i => i.isVideo).length;
+          const albumSent = await sock.sendMessage(target, {
+            album: { expectedImageCount: imageCount, expectedVideoCount: videoCount }
+          });
+          const albumParentKey = albumSent && albumSent.key ? albumSent.key : null;
+          if (albumSent && albumSent.key && albumSent.key.id) reklamMuafMsgIds.add(albumSent.key.id);
+          let isFirst = true;
+          for (const meta of metaItems) {
+            const buf = readMediaFile(meta.file);
+            if (!buf) continue;
+            const caption = isFirst ? firstCaption : '';
+            isFirst = false;
+            const msgPayload = meta.isVideo
+              ? { video: buf, caption }
+              : { image: buf, caption };
+            if (albumParentKey) msgPayload.albumParentKey = albumParentKey;
+            const sent = await sock.sendMessage(target, msgPayload);
+            if (sent && sent.key && sent.key.id) reklamMuafMsgIds.add(sent.key.id);
+          }
+        }
       }
     } else if (ad.mesaj) {
       await sock.sendMessage(target, { text: ad.mesaj });
