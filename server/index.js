@@ -446,6 +446,10 @@ async function handleMessage(msg) {
       if (!k2BatchTracker[userId] || Date.now() - k2BatchTracker[userId].windowStart > WAIT_MS_CFG + 2000) {
         k2BatchTracker[userId] = { hasFiyat: false, windowStart: Date.now(), warn10Time: 0 };
       }
+      // Önceki pencerede fiyatlı vardı ama şu an gelen fiyatsız → yeni pencere aç (ilanlar ayrı flaglanır)
+      if (!hasFiyat && k2BatchTracker[userId].hasFiyat) {
+        k2BatchTracker[userId] = { hasFiyat: false, windowStart: Date.now(), warn10Time: 0 };
+      }
       if (hasFiyat) k2BatchTracker[userId].hasFiyat = true;
       const k2BatchHasFiyat = k2BatchTracker[userId].hasFiyat;
       const k2Warn10Time = k2BatchTracker[userId].warn10Time || 0;
