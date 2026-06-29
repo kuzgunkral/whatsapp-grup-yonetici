@@ -864,6 +864,24 @@ app.post('/api/open-group', async (req, res) => {
   } catch(e) { res.json({ success: false, error: e.message }); }
 });
 
+// ─── API: TOGGLE GROUP (aç/kapat tek buton) ──────────────────────────────────
+app.post('/api/toggle-group', async (req, res) => {
+  if (!isReady) return res.json({ success: false, error: 'Bağlı değil' });
+  const groupId = req.body.groupId || activeGroupId;
+  if (!groupId) return res.json({ success: false, error: 'Grup yok' });
+  try {
+    const meta = await sock.groupMetadata(groupId);
+    const isClosed = meta.announce === true || meta.announce === 'true';
+    if (isClosed) {
+      await sock.groupSettingUpdate(groupId, 'not_announcement');
+      res.json({ success: true, closed: false });
+    } else {
+      await sock.groupSettingUpdate(groupId, 'announcement');
+      res.json({ success: true, closed: true });
+    }
+  } catch(e) { res.json({ success: false, error: e.message }); }
+});
+
 // ─── API: PAUSE GROUP (toggle) ────────────────────────────────────────────────
 app.post('/api/pause-group', (req, res) => {
   const groupId = req.body.groupId || activeGroupId;
