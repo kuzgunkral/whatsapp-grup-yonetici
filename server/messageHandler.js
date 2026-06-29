@@ -283,6 +283,9 @@ async function kural3Check({
   saveDeletedLog();
   io.emit('log', { type: 'deleted', user: userName || userPhone, group: groupName });
   io.emit('deleted_ads_updated', { total: deletedAdsLog.length });
+  // K3 batch tracker'ını 5dk sonra temizle (paidTime süresi kadar)
+  const FIVE_MIN = (config.adIntervalMin || 5) * 60 * 1000;
+  setTimeout(() => { delete batchLogTracker[batchKey]; }, FIVE_MIN + 5000);
 
   return 'deleted';
 }
