@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js"
+    "start": "node --max-old-space-size=512 index.js"
   },
   "dependencies": {
     "baileys": "7.0.0-rc13",
