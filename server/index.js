@@ -926,17 +926,21 @@ app.post('/api/restore-ad', async (req, res) => {
     try {
       const validMedia = (ad.medyaListesi || []).filter(m => m && m.file);
       if (validMedia.length > 0) {
+        // Caption sadece ilk resimde — WhatsApp sonraki resimleri aynı "albüm"de gruplar
+        let firstCaption = true;
         for (const m of validMedia) {
           const buf = readMediaFile(m.file);
           if (!buf) continue;
           const isVideo = m.mimetype && m.mimetype.startsWith('video');
+          const caption = firstCaption ? (m.caption || ad.mesaj || '') : '';
+          firstCaption = false;
           const sent = await sock.sendMessage(target, isVideo
-            ? { video: buf, caption: m.caption || '' }
-            : { image: buf, caption: m.caption || '' }
+            ? { video: buf, caption }
+            : { image: buf, caption }
           );
           // Geri yüklenen mesaj bot tarafından silinmesin
           if (sent && sent.key && sent.key.id) reklamMuafMsgIds.add(sent.key.id);
-          await new Promise(r => setTimeout(r, 300));
+          await new Promise(r => setTimeout(r, 100));
         }
       } else if (ad.mesaj) {
         const sent = await sock.sendMessage(target, { text: ad.mesaj });
@@ -964,17 +968,21 @@ app.post('/api/restore-as-ad', async (req, res) => {
     if (!target) return res.json({ success: false, error: 'Hedef grup yok' });
     const validMedia = (ad.medyaListesi || []).filter(m => m && m.file);
     if (validMedia.length > 0) {
+      // Caption sadece ilk resimde — WhatsApp sonraki resimleri aynı "albüm"de gruplar
+      let firstCaption = true;
       for (const m of validMedia) {
         const buf = readMediaFile(m.file);
         if (!buf) continue;
         const isVideo = m.mimetype && m.mimetype.startsWith('video');
+        const caption = firstCaption ? (m.caption || ad.mesaj || '') : '';
+        firstCaption = false;
         const sent = await sock.sendMessage(target, isVideo
-          ? { video: buf, caption: m.caption || '' }
-          : { image: buf, caption: m.caption || '' }
+          ? { video: buf, caption }
+          : { image: buf, caption }
         );
         // Geri yüklenen mesaj bot tarafından silinmesin
         if (sent && sent.key && sent.key.id) reklamMuafMsgIds.add(sent.key.id);
-        await new Promise(r => setTimeout(r, 300));
+        await new Promise(r => setTimeout(r, 100));
       }
     } else if (ad.mesaj) {
       const sent = await sock.sendMessage(target, { text: ad.mesaj });
