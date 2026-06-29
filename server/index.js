@@ -193,7 +193,19 @@ async function connect(phoneNumber) {
           io.emit('log', { type: 'error', message: 'Session dosyaları kayboldu, yeniden QR/pairing gerekiyor' });
         }
 
-        if (code === 401 || code === 403 || code === 405) {
+        // "Decrypted message with closed session" — oturum bozuk, auth temizle ve yeniden bağlan
+        if (errMsg.includes('closed session') || errMsg.includes('Decrypted message')) {
+          debugLog('⚠️ Closed session error — auth temizleniyor ve yeniden bağlanılıyor...');
+          io.emit('log', { type: 'error', message: 'Oturum bozuk, yeniden bağlanılıyor...' });
+          try {
+            if (fs.existsSync(AUTH_DIR)) {
+              fs.readdirSync(AUTH_DIR).forEach(f => {
+                try { fs.unlinkSync(require('path').join(AUTH_DIR, f)); } catch(e2) {}
+              });
+            }
+          } catch(e2) { debugLog('Auth temizleme hatası: ' + e2.message); }
+          setTimeout(() => connect(phoneNumber), 3000);
+        } else if (code === 401 || code === 403 || code === 405) {
           debugLog('Not reconnecting due to status: ' + code);
           io.emit('log', { type: 'error', message: 'WhatsApp bağlantısı reddedildi (kod: ' + code + '), yeniden giriş gerekiyor' });
         } else {
