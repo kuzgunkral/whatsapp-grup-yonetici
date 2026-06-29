@@ -6,7 +6,7 @@ const QRCode = require('qrcode');
 const pino = require('pino');
 const fs = require('fs');
 const path = require('path');
-const { hasFiyatMi, kuralResim, kuralFiyatliResim, kural3SetPaidTime, kural3Check, kuralFiyatsizMetin } = require('./messageHandler');
+const { hasFiyatMi, kuralResim, kuralFiyatliResim, kural3SetPaidTime, kural3Check, kuralFiyatsizMetin, setMediaDir, saveMediaToDir } = require('./messageHandler');
 
 // ─── GLOBAL HATA YAKALAYICI ──────────────────────────────────────────────────
 // Baileys "closed session" ve diğer unhandled promise hatalarının process'i
@@ -36,6 +36,10 @@ const AUTH_DIR = path.join(DATA_DIR, 'baileys-auth');
 const LOG_FILE = path.join(DATA_DIR, 'deleted-ads-log.json');
 const CONFIG_FILE = path.join(DATA_DIR, 'bot-config.json');
 const ACTIVE_GROUP_FILE = path.join(DATA_DIR, 'active-group.txt');
+const MEDIA_DIR = path.join(DATA_DIR, 'media');
+if (!fs.existsSync(MEDIA_DIR)) { try { fs.mkdirSync(MEDIA_DIR, { recursive: true }); } catch(e) {} }
+setMediaDir(MEDIA_DIR);
+console.log(`📂 MEDIA_DIR: ${MEDIA_DIR}`);
 
 // ─── DEBUG LOG ────────────────────────────────────────────────────────────────
 const DEBUG_LOG_PATH = () => path.join(DATA_DIR, 'debug.log');
@@ -453,22 +457,40 @@ async function handleMessage(msg) {
         const delGroupName = groupName;
         const delUserPhone = userPhone;
         const delUserName = userName;
+        // POST-WARN batch key: K1 penceresine bağlı (aynı batch)
+        const postWarnBatchKey = st && st.windowStart ? `${userId}_${st.windowStart}` : `${userId}_pw_${Date.now()}`;
+        const capturedMsg = msg;
         setTimeout(async () => {
           if (hasFiyatMi(delText)) return;
           const tryDel = async (a) => { try { await sock.sendMessage(delChatId, { delete: delKey }); } catch(e) { if (a < 3) setTimeout(() => tryDel(a+1), 5000); } };
           tryDel(1);
           stats.messagesDeleted++;
           console.log(`🗑️ [POST-WARN-30SN] user=${delUserId} caption="${(delText||'').substring(0,30)}"`);
-          deletedAdsLog.unshift({
-            id: Date.now().toString(),
-            tarih: new Date().toLocaleDateString('tr-TR'),
-            saat: new Date().toLocaleTimeString('tr-TR'),
-            timestamp: new Date().toISOString(),
-            kullanici: delUserName || delUserPhone, telefon: delUserPhone, userId: delUserId,
-            grupId: delChatId, grup: delGroupName, mesaj: delText || '',
-            sebep: 'Fiyatsız resim (10 sonrası 30sn)', topluAdet: 1,
-            medyaData: null, medyaMimetype: null, medyaListesi: []
-          });
+          // Aynı penceredeki resimler tek log kaydında toplanır
+          let entry = deletedAdsLog.find(a => a.id === postWarnBatchKey);
+          if (!entry) {
+            entry = {
+              id: postWarnBatchKey,
+              tarih: new Date().toLocaleDateString('tr-TR'),
+              saat: new Date().toLocaleTimeString('tr-TR'),
+              timestamp: new Date().toISOString(),
+              kullanici: delUserName || delUserPhone, telefon: delUserPhone, userId: delUserId,
+              grupId: delChatId, grup: delGroupName, mesaj: delText || '',
+              sebep: 'Fiyatsız resim (10 sonrası 30sn)', topluAdet: 0,
+              medyaData: null, medyaMimetype: null, medyaListesi: []
+            };
+            deletedAdsLog.unshift(entry);
+          }
+          // Medyayı diske kaydet (saveMediaToDir top-level import'tan gelir)
+          try {
+            const mediaResult = await saveMediaToDir(capturedMsg, postWarnBatchKey, entry.medyaListesi.length);
+            if (mediaResult) {
+              entry.medyaListesi.push({ file: mediaResult.file, mimetype: mediaResult.mimetype, caption: delText || '' });
+              if (!entry.medyaData) { entry.medyaData = mediaResult.file; entry.medyaMimetype = mediaResult.mimetype; }
+            }
+          } catch(e) {}
+          entry.topluAdet = (entry.topluAdet || 0) + 1;
+          if (!entry.mesaj && delText) entry.mesaj = delText;
           if (deletedAdsLog.length > 500) deletedAdsLog.splice(500);
           saveDeletedLog();
           io.emit('log', { type: 'deleted', user: delUserName || delUserPhone, group: delGroupName });
@@ -862,7 +884,29 @@ app.post('/api/clear-all-logs', (req, res) => {
 // ─── RESTORE QUEUE (sıralı gönderim — art arda restore'lar çakışmasın) ────────
 let restoreQueue = Promise.resolve();
 
+// ─── MEDYA DOSYASI OKU (disk'ten buffer) ─────────────────────────────────────
+function readMediaFile(filename) {
+  try {
+    if (!filename || filename.includes('..') || filename.includes('/') || filename.includes('\\')) return null;
+    const filePath = path.join(MEDIA_DIR, filename);
+    if (!fs.existsSync(filePath)) return null;
+    return fs.readFileSync(filePath);
+  } catch(e) { return null; }
+}
+
+// ─── API: MEDIA SERVE ─────────────────────────────────────────────────────────
+app.get('/api/media/:filename', (req, res) => {
+  const { filename } = req.params;
+  const buf = readMediaFile(filename);
+  if (!buf) return res.status(404).json({ error: 'Dosya bulunamadı' });
+  const ext = path.extname(filename).toLowerCase();
+  const mimeMap = { '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.webp': 'image/webp', '.mp4': 'video/mp4', '.bin': 'application/octet-stream' };
+  res.set('Content-Type', mimeMap[ext] || 'application/octet-stream');
+  res.send(buf);
+});
+
 // ─── API: RESTORE AD ─────────────────────────────────────────────────────────
+// Tüm resimler diskten okunur, tek blokta sıralı gönderilir.
 app.post('/api/restore-ad', async (req, res) => {
   const { adId, id, groupId } = req.body;
   const lookupId = adId || id;
@@ -874,20 +918,24 @@ app.post('/api/restore-ad', async (req, res) => {
   let result = { success: false, error: 'Bilinmeyen hata' };
   restoreQueue = restoreQueue.then(async () => {
     try {
-      const validMedia = (ad.medyaListesi || []).filter(m => m && m.data);
+      const validMedia = (ad.medyaListesi || []).filter(m => m && m.file);
       if (validMedia.length > 0) {
         for (const m of validMedia) {
-          await sock.sendMessage(target, { image: Buffer.from(m.data, 'base64'), caption: '' });
+          const buf = readMediaFile(m.file);
+          if (!buf) continue;
+          const isVideo = m.mimetype && m.mimetype.startsWith('video');
+          await sock.sendMessage(target, isVideo
+            ? { video: buf, caption: m.caption || '' }
+            : { image: buf, caption: m.caption || '' }
+          );
+          await new Promise(r => setTimeout(r, 300));
         }
-      } else if (ad.medyaData) {
-        const buf = Buffer.from(ad.medyaData, 'base64');
-        const isVideo = ad.medyaMimetype && ad.medyaMimetype.startsWith('video');
-        await sock.sendMessage(target, isVideo ? { video: buf, caption: '' } : { image: buf, caption: '' });
       } else if (ad.mesaj) {
         await sock.sendMessage(target, { text: ad.mesaj });
       } else { result = { success: false, error: 'Geri yüklenecek içerik yok' }; return; }
       deletedAdsLog = deletedAdsLog.filter(a => a.id !== lookupId);
       saveDeletedLog();
+      io.emit('deleted_ads_updated', { total: deletedAdsLog.length });
       result = { success: true };
     } catch(e) { result = { success: false, error: e.message }; }
   });
@@ -905,18 +953,24 @@ app.post('/api/restore-as-ad', async (req, res) => {
   try {
     const target = groupId || activeGroupId;
     if (!target) return res.json({ success: false, error: 'Hedef grup yok' });
-    if (ad.medyaListesi && ad.medyaListesi.length > 0) {
-      for (const m of ad.medyaListesi) {
-        if (!m || !m.data) continue;
-        await sock.sendMessage(target, { image: Buffer.from(m.data, 'base64'), caption: '' });
+    const validMedia = (ad.medyaListesi || []).filter(m => m && m.file);
+    if (validMedia.length > 0) {
+      for (const m of validMedia) {
+        const buf = readMediaFile(m.file);
+        if (!buf) continue;
+        const isVideo = m.mimetype && m.mimetype.startsWith('video');
+        await sock.sendMessage(target, isVideo
+          ? { video: buf, caption: m.caption || '' }
+          : { image: buf, caption: m.caption || '' }
+        );
+        await new Promise(r => setTimeout(r, 300));
       }
-    } else if (ad.medyaData) {
-      await sock.sendMessage(target, { image: Buffer.from(ad.medyaData, 'base64'), caption: '' });
     } else if (ad.mesaj) {
       await sock.sendMessage(target, { text: ad.mesaj });
     }
     deletedAdsLog = deletedAdsLog.filter(a => a.id !== lookupId);
     saveDeletedLog();
+    io.emit('deleted_ads_updated', { total: deletedAdsLog.length });
     res.json({ success: true });
   } catch(e) { res.json({ success: false, error: e.message }); }
 });
@@ -1050,11 +1104,51 @@ io.on('connection', (socket) => {
 // Stats broadcast her 10 saniyede bir
 setInterval(() => { io.emit('stats', stats); }, 10000);
 
+// ─── MEDYA TEMİZLEME (24 saatlik) ────────────────────────────────────────────
+// 24 saati geçen medya dosyaları diskten silinir + log kaydındaki referanslar temizlenir
+function cleanOldMedia() {
+  const MAX_AGE_MS = 24 * 60 * 60 * 1000; // 24 saat
+  const now = Date.now();
+  try {
+    if (!fs.existsSync(MEDIA_DIR)) return;
+    const files = fs.readdirSync(MEDIA_DIR);
+    let deleted = 0;
+    for (const filename of files) {
+      const filePath = path.join(MEDIA_DIR, filename);
+      try {
+        const stat = fs.statSync(filePath);
+        if (now - stat.mtimeMs > MAX_AGE_MS) {
+          fs.unlinkSync(filePath);
+          deleted++;
+          // Log kayıtlarındaki referansları temizle
+          for (const ad of deletedAdsLog) {
+            if (ad.medyaListesi) {
+              const before = ad.medyaListesi.length;
+              ad.medyaListesi = ad.medyaListesi.filter(m => m.file !== filename);
+              if (ad.medyaListesi.length !== before && ad.medyaData === filename) {
+                ad.medyaData = ad.medyaListesi.length > 0 ? ad.medyaListesi[0].file : null;
+                ad.medyaMimetype = ad.medyaListesi.length > 0 ? ad.medyaListesi[0].mimetype : null;
+              }
+            }
+          }
+        }
+      } catch(e) {}
+    }
+    if (deleted > 0) {
+      saveDeletedLog();
+      console.log(`🧹 Medya temizlendi: ${deleted} dosya silindi`);
+    }
+  } catch(e) { console.error('cleanOldMedia hata:', e.message); }
+}
+// Her 1 saatte bir çalıştır
+setInterval(cleanOldMedia, 60 * 60 * 1000);
+
 // ─── SERVER START ─────────────────────────────────────────────────────────────
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
   console.log(`✅ Server ${PORT} portunda çalışıyor`);
   // loadDeletedLog() ve loadConfig() startup'ta (satır 90-91) zaten çağrıldı
   scheduleRuleReminder();
+  cleanOldMedia(); // başlangıçta eski medyaları temizle
   connect().catch(e => console.error('Initial connect error:', e.message));
 });

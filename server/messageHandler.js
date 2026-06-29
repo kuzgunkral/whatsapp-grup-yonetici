@@ -1,8 +1,63 @@
 /**
  * messageHandler.js
  * WhatsApp grup mesaj kuralları — modüler yapı
- * Her kural kendi fonksiyonunda, bağımsız çalışır.
+ *
+ * MEDYA DEPOLAMA:
+ *  - Resimler RAM'de base64 olarak saklanmaz (OOM önleme).
+ *  - Her silinen resim MEDIA_DIR klasörüne dosya olarak yazılır.
+ *  - Log kaydında medyaListesi = [{ file: 'filename.jpg', mimetype, caption }]
+ *  - Sunucu /api/media/:filename endpoint'i ile serve eder.
+ *  - MEDIA_DIR dışarıdan set edilir (index.js'ten setMediaDir çağrılır).
+ *
+ * LOG BATCH SİSTEMİ:
+ *  - Aynı kullanıcının aynı ilan penceresindeki TÜM silinen resimler
+ *    tek bir log kaydında toplanır (batchKey = userId_windowStart).
+ *  - Farklı ilanlar → farklı batchKey → farklı log kaydı → karışmaz.
  */
+
+const fs = require('fs');
+const path = require('path');
+
+// ─── MEDIA DIR ───────────────────────────────────────────────────────────────
+let MEDIA_DIR = null;
+function setMediaDir(dir) {
+  MEDIA_DIR = dir;
+  if (!fs.existsSync(MEDIA_DIR)) {
+    try { fs.mkdirSync(MEDIA_DIR, { recursive: true }); } catch(e) {}
+  }
+}
+
+/**
+ * Medyayı diske kaydeder. Başarılıysa { file, mimetype } döner, yoksa null.
+ * file = sadece dosya adı (path değil), sunucu /api/media/:file ile serve eder.
+ */
+async function saveMediaFile(msg, downloadFn, batchKey, index) {
+  if (!MEDIA_DIR) return null;
+  try {
+    if (!msg.message) return null;
+    const { downloadMediaMessage } = await import('baileys');
+    const buffer = await downloadMediaMessage(msg, 'buffer', {});
+    if (!buffer) return null;
+    let mimetype = 'image/jpeg';
+    let ext = 'jpg';
+    if (msg.message.imageMessage) { mimetype = msg.message.imageMessage.mimetype || 'image/jpeg'; }
+    else if (msg.message.videoMessage) { mimetype = msg.message.videoMessage.mimetype || 'video/mp4'; ext = 'mp4'; }
+    else if (msg.message.documentMessage) { mimetype = msg.message.documentMessage.mimetype || 'application/octet-stream'; ext = 'bin'; }
+    if (mimetype.includes('jpeg') || mimetype.includes('jpg')) ext = 'jpg';
+    else if (mimetype.includes('png')) ext = 'png';
+    else if (mimetype.includes('webp')) ext = 'webp';
+    else if (mimetype.includes('mp4')) ext = 'mp4';
+    // Güvenli dosya adı: batchKey içindeki @ ve özel karakterleri temizle
+    const safeKey = batchKey.replace(/[^a-zA-Z0-9_\-]/g, '_');
+    const filename = `${safeKey}_${index}_${Date.now()}.${ext}`;
+    const filePath = path.join(MEDIA_DIR, filename);
+    fs.writeFileSync(filePath, buffer);
+    return { file: filename, mimetype };
+  } catch(e) {
+    console.error('[saveMediaFile] Hata:', e.message);
+    return null;
+  }
+}
 
 // ─── FIYAT ALGILAMA ─────────────────────────────────────────────────────────
 function hasFiyatMi(text) {
@@ -33,13 +88,70 @@ function hasFiyatMi(text) {
   );
 }
 
+// ─── GLOBAL WARN10 TRACKER ────────────────────────────────────────────────────
+const globalWarn10Tracker = {};
+
+// ─── BATCH LOG TRACKER ───────────────────────────────────────────────────────
+// batchLogTracker[batchKey] = { entry, mediaIndex }
+const batchLogTracker = {};
+
+function getOrCreateBatchLog({
+  batchKey, deletedAdsLog,
+  userId, userName, userPhone, chatId, groupName, sebep
+}) {
+  if (batchLogTracker[batchKey]) {
+    return batchLogTracker[batchKey];
+  }
+  const entry = {
+    id: batchKey,
+    tarih: new Date().toLocaleDateString('tr-TR'),
+    saat: new Date().toLocaleTimeString('tr-TR'),
+    timestamp: new Date().toISOString(),
+    kullanici: userName || userPhone,
+    telefon: userPhone,
+    userId,
+    grupId: chatId,
+    grup: groupName,
+    mesaj: '',
+    sebep,
+    topluAdet: 0,
+    // Medya dosya listesi — base64 değil, dosya adı
+    medyaListesi: [],
+    // Geriye dönük uyumluluk için (restore endpoint'i okur)
+    medyaData: null,
+    medyaMimetype: null
+  };
+  deletedAdsLog.unshift(entry);
+  batchLogTracker[batchKey] = { entry, mediaIndex: 0 };
+  return batchLogTracker[batchKey];
+}
+
+/**
+ * Medyayı diske kaydedip batch log'a ekler.
+ * Medya kaydedilemezse sadece topluAdet artar (resim olmadan log düşer).
+ */
+async function addMediaToBatch({ batchKey, msg, caption, deletedAdsLog }) {
+  const tracker = batchLogTracker[batchKey];
+  if (!tracker) return;
+  const { entry } = tracker;
+
+  const mediaResult = await saveMediaFile(msg, null, batchKey, tracker.mediaIndex);
+  tracker.mediaIndex++;
+
+  if (mediaResult) {
+    entry.medyaListesi.push({ file: mediaResult.file, mimetype: mediaResult.mimetype, caption: caption || '' });
+    // İlk dosyayı medyaData olarak da sakla (geriye dönük uyumluluk)
+    if (!entry.medyaData) {
+      entry.medyaData = mediaResult.file; // artık base64 değil, dosya adı
+      entry.medyaMimetype = mediaResult.mimetype;
+    }
+  }
+  entry.topluAdet = (entry.topluAdet || 0) + 1;
+  if (!entry.mesaj && caption) entry.mesaj = caption;
+  if (deletedAdsLog.length > 500) deletedAdsLog.splice(500);
+}
+
 // ─── KURAL 1: FIYATSIZ TOPLU RESİM ───────────────────────────────────────────
-// Her resim için imgCount artar (pencere bazlı — WAIT_MS+2sn sonra sıfırlanır).
-// imgCount > 10 → anında sil
-// imgCount <= 10 → WAIT_MS bekle
-//   30sn sonunda: caption fiyatlıysa VEYA userActiveBatch.hasFiyat=true ise muaf tut
-//   aksi halde sil
-// spamTracker[userId] = { imgCount, warn10Time, windowStart }
 async function kuralResim({
   sock, chatId, realUserId, msg, userId, userName, userPhone, groupName, msgText,
   spamTracker, stats, reklamMuafMsgIds, deletedAdsLog, saveDeletedLog, io,
@@ -47,31 +159,28 @@ async function kuralResim({
 }) {
   const WAIT_MS = (config.photoWaitSec || 30) * 1000;
   const ONE_HOUR = 60 * 60 * 1000;
-
   const now = Date.now();
-  const POST_WARN_GRACE = 3000; // 10 bırakıldıktan 3sn sonra yeni batch sayılır
+  const POST_WARN_GRACE = 3000;
 
-  // Tracker yoksa sıfırla
   if (!spamTracker[userId]) {
     spamTracker[userId] = { imgCount: 0, warn10Time: 0, windowStart: now };
   }
   const t = spamTracker[userId];
 
-  // Pencere dolmuşsa sıfırla
   if (now - (t.windowStart || 0) > WAIT_MS + 2000) {
     t.imgCount = 0;
     t.windowStart = now;
-  }
-  // 10 bırakılıp 3sn geçtiyse → yeni batch: sıfırla ve 30sn bekleme path'ine gir
-  else if (t.imgCount >= 10 && t.warn10Time && now - t.warn10Time > POST_WARN_GRACE) {
+  } else if (t.imgCount >= 10 && t.warn10Time && now - t.warn10Time > POST_WARN_GRACE) {
     t.imgCount = 0;
     t.windowStart = now;
   }
 
   t.imgCount++;
+  const batchKey = `${userId}_${t.windowStart}`;
 
-  // 10+ → uyarı (saatlik 1 kez, global tracker) + anında sil
+  // 10+ → uyarı + anında sil
   if (t.imgCount > 10) {
+    if (!t.warn10Time) t.warn10Time = now;
     const gw = globalWarn10Tracker[userId] || 0;
     if (Date.now() - gw > ONE_HOUR) {
       globalWarn10Tracker[userId] = Date.now();
@@ -87,10 +196,17 @@ async function kuralResim({
     tryDel(1);
     stats.messagesDeleted++;
     console.log(`🗑️ [K1-10+] user=${userId} count=${t.imgCount}`);
+
+    getOrCreateBatchLog({ batchKey, deletedAdsLog, userId, userName, userPhone, chatId, groupName, sebep: 'Fiyatsız resim (10+ adet)' });
+    await addMediaToBatch({ batchKey, msg, caption: msgText, deletedAdsLog });
+    saveDeletedLog();
+    io.emit('log', { type: 'deleted', user: userName || userPhone, group: groupName });
+    io.emit('deleted_ads_updated', { total: deletedAdsLog.length });
+    setTimeout(() => { delete batchLogTracker[batchKey]; }, WAIT_MS + 10000);
     return 'deleted';
   }
 
-  // ≤10 → WAIT_MS bekle, sonra karar ver (lazy medya)
+  // ≤10 → WAIT_MS bekle
   const delKey = getDeleteKey(msg);
   const delMsgId = msg.key.id;
   const delText = msgText;
@@ -99,45 +215,31 @@ async function kuralResim({
   const delGroupName = groupName;
   const delUserPhone = userPhone;
   const delUserName = userName;
+  const batchWindowStart = t.windowStart;
+  const capturedMsg = msg;
 
   setTimeout(async () => {
     if (reklamMuafMsgIds.has(delMsgId)) { reklamMuafMsgIds.delete(delMsgId); return; }
     if (hasFiyatMi(delText)) return;
 
-    let mediaInfo = null;
-    try { mediaInfo = await downloadMediaMessage(msg); } catch(e) {}
     const tryDel = async (a) => { try { await sock.sendMessage(delChatId, { delete: delKey }); } catch(e) { if (a < 3) setTimeout(() => tryDel(a+1), 5000); } };
     tryDel(1);
     stats.messagesDeleted++;
     console.log(`🗑️ [K1-30SN] user=${delUserId} caption="${(delText||'').substring(0,30)}"`);
-    deletedAdsLog.unshift({
-      id: Date.now().toString(),
-      tarih: new Date().toLocaleDateString('tr-TR'),
-      saat: new Date().toLocaleTimeString('tr-TR'),
-      timestamp: new Date().toISOString(),
-      kullanici: delUserName || delUserPhone, telefon: delUserPhone, userId: delUserId,
-      grupId: delChatId, grup: delGroupName, mesaj: delText || '',
-      sebep: 'Fiyatsız resim (30sn)', topluAdet: 1,
-      medyaData: mediaInfo?.data || null, medyaMimetype: mediaInfo?.mimetype || null,
-      medyaListesi: mediaInfo ? [{ data: mediaInfo.data, mimetype: mediaInfo.mimetype, caption: delText || '' }] : []
-    });
-    if (deletedAdsLog.length > 500) deletedAdsLog.splice(500);
+
+    const bKey = `${delUserId}_${batchWindowStart}`;
+    getOrCreateBatchLog({ batchKey: bKey, deletedAdsLog, userId: delUserId, userName: delUserName, userPhone: delUserPhone, chatId: delChatId, groupName: delGroupName, sebep: 'Fiyatsız resim (30sn)' });
+    await addMediaToBatch({ batchKey: bKey, msg: capturedMsg, caption: delText, deletedAdsLog });
     saveDeletedLog();
     io.emit('log', { type: 'deleted', user: delUserName || delUserPhone, group: delGroupName });
     io.emit('deleted_ads_updated', { total: deletedAdsLog.length });
+    setTimeout(() => { delete batchLogTracker[bKey]; }, 10000);
   }, WAIT_MS);
 
   return 'waiting';
 }
 
-// ─── GLOBAL WARN10 TRACKER ────────────────────────────────────────────────────
-// Kural 1 ve Kural 2'nin "10+ resim" uyarısı saatlik 1 kez — ortak tracker
-const globalWarn10Tracker = {};
-
 // ─── KURAL 3: FIYATLI İLAN SONRASI 5DK SPAM ──────────────────────────────────
-// Kural 2 muafiyeti bittikten sonra aktif olur (paidTime set edilince).
-// 5dk içinde gelen her resim (fiyatlı/fiyatsız) anında silinir.
-// spam5dkTracker[userId] = { paidTime, warnedTime }
 const spam5dkTracker = {};
 
 function kural3SetPaidTime(userId) {
@@ -159,7 +261,6 @@ async function kural3Check({
     return 'continue';
   }
 
-  // 5dk içinde → saatlik 1 kez uyarı gönder, her seferinde sessiz sil
   if (!tracker.warnedTime || now - tracker.warnedTime > ONE_HOUR) {
     tracker.warnedTime = now;
     try {
@@ -175,14 +276,18 @@ async function kural3Check({
   tryDel(1);
   stats.messagesDeleted++;
   console.log(`🗑️ [K3-5DK] user=${userId}`);
+
+  const batchKey = `${userId}_k3_${tracker.paidTime}`;
+  getOrCreateBatchLog({ batchKey, deletedAdsLog, userId, userName, userPhone, chatId, groupName, sebep: '5dk spam (Kural 3)' });
+  await addMediaToBatch({ batchKey, msg, caption: msgText, deletedAdsLog });
+  saveDeletedLog();
+  io.emit('log', { type: 'deleted', user: userName || userPhone, group: groupName });
+  io.emit('deleted_ads_updated', { total: deletedAdsLog.length });
+
   return 'deleted';
 }
 
 // ─── KURAL 2: FIYATLI TOPLU RESİM ────────────────────────────────────────────
-// Batch içinde en az 1 fiyatlı resim varsa tüm batch muaf tutulur.
-// 10+ resim → anında 10'a düşür (sil)
-// ≤10 resim → 30sn bekle → batch fiyatlıysa muaf, değilse sil
-// fiyatliResimTracker[userId] = { count, warn10Time, cleanupScheduled, windowStart }
 const fiyatliResimTracker = {};
 
 async function kuralFiyatliResim({
@@ -194,7 +299,6 @@ async function kuralFiyatliResim({
   const WAIT_MS = (config.photoWaitSec || 30) * 1000;
   const ONE_HOUR = 60 * 60 * 1000;
 
-  // Tracker yoksa veya pencere dolmuşsa yeni batch başlat
   const existingFt = fiyatliResimTracker[userId];
   if (!existingFt || Date.now() - (existingFt.windowStart || 0) > WAIT_MS + 2000) {
     fiyatliResimTracker[userId] = {
@@ -207,7 +311,9 @@ async function kuralFiyatliResim({
   const ft = fiyatliResimTracker[userId];
   ft.count++;
 
-  // 10+ → uyarı (saatlik 1 kez, global tracker) + anında sil
+  const batchKey = `${userId}_k2_${ft.windowStart}`;
+
+  // 10+ → anında sil
   if (ft.count > 10) {
     const gw = globalWarn10Tracker[userId] || 0;
     if (Date.now() - gw > ONE_HOUR) {
@@ -225,10 +331,17 @@ async function kuralFiyatliResim({
     stats.messagesDeleted++;
     console.log(`🗑️ [K2-10+] user=${userId} count=${ft.count}`);
     if (typeof onWarn10 === 'function') onWarn10(userId);
+
+    getOrCreateBatchLog({ batchKey, deletedAdsLog, userId, userName, userPhone, chatId, groupName, sebep: 'Fiyatlı resim (10+ adet)' });
+    await addMediaToBatch({ batchKey, msg, caption: msgText, deletedAdsLog });
+    saveDeletedLog();
+    io.emit('log', { type: 'deleted', user: userName || userPhone, group: groupName });
+    io.emit('deleted_ads_updated', { total: deletedAdsLog.length });
+    setTimeout(() => { delete batchLogTracker[batchKey]; }, WAIT_MS + 10000);
     return 'deleted';
   }
 
-  // ≤10 → 30sn bekle → batch fiyatlıysa muaf, değilse sil
+  // ≤10 → 30sn bekle
   const delKey = getDeleteKey(msg);
   const delMsgId = msg.key.id;
   const delText = msgText;
@@ -237,54 +350,39 @@ async function kuralFiyatliResim({
   const delGroupName = groupName;
   const delUserPhone = userPhone;
   const delUserName = userName;
-  // k2BatchHasFiyat snapshot olarak sakla — batch'te fiyatlı resim var mı
   const batchFiyatliSnapshot = k2BatchHasFiyat;
+  const batchWindowStart = ft.windowStart;
+  const capturedMsg = msg;
 
   setTimeout(async () => {
     if (reklamMuafMsgIds.has(delMsgId)) { reklamMuafMsgIds.delete(delMsgId); return; }
-    // Batch fiyatlıysa → muaf tut (snapshot veya tracker'dan)
     if (batchFiyatliSnapshot) {
       console.log(`[K2-MUAF] user=${delUserId} → koru`);
       if (typeof kural3SetPaidTime === 'function') kural3SetPaidTime(delUserId);
       return;
     }
-    // Fiyat yok → sil
-    let mediaInfo = null;
-    try { mediaInfo = await downloadMediaMessage(msg); } catch(e) {}
     const tryDel = async (a) => { try { await sock.sendMessage(delChatId, { delete: delKey }); } catch(e) { if (a < 3) setTimeout(() => tryDel(a+1), 5000); } };
     tryDel(1);
     stats.messagesDeleted++;
-    deletedAdsLog.unshift({
-      id: Date.now().toString(),
-      tarih: new Date().toLocaleDateString('tr-TR'),
-      saat: new Date().toLocaleTimeString('tr-TR'),
-      timestamp: new Date().toISOString(),
-      kullanici: delUserName || delUserPhone, telefon: delUserPhone, userId: delUserId,
-      grupId: delChatId, grup: delGroupName, mesaj: delText || '',
-      sebep: 'Fiyatlı resim fiyatsız bulundu (30sn)', topluAdet: 1,
-      medyaData: mediaInfo?.data || null, medyaMimetype: mediaInfo?.mimetype || null,
-      medyaListesi: mediaInfo ? [{ data: mediaInfo.data, mimetype: mediaInfo.mimetype, caption: delText || '' }] : []
-    });
-    if (deletedAdsLog.length > 500) deletedAdsLog.splice(500);
+
+    const bKey = `${delUserId}_k2_${batchWindowStart}`;
+    getOrCreateBatchLog({ batchKey: bKey, deletedAdsLog, userId: delUserId, userName: delUserName, userPhone: delUserPhone, chatId: delChatId, groupName: delGroupName, sebep: 'Fiyatlı resim fiyatsız bulundu (30sn)' });
+    await addMediaToBatch({ batchKey: bKey, msg: capturedMsg, caption: delText, deletedAdsLog });
     saveDeletedLog();
     io.emit('log', { type: 'deleted', user: delUserName || delUserPhone, group: delGroupName });
     io.emit('deleted_ads_updated', { total: deletedAdsLog.length });
+    setTimeout(() => { delete batchLogTracker[bKey]; }, 10000);
   }, WAIT_MS);
 
-  // Cleanup timer sadece 1 kez — 30sn timeout'lardan sonra
   if (!ft.cleanupScheduled) {
     ft.cleanupScheduled = true;
-    setTimeout(() => {
-      delete fiyatliResimTracker[delUserId];
-    }, WAIT_MS + 5000);
+    setTimeout(() => { delete fiyatliResimTracker[userId]; }, WAIT_MS + 5000);
   }
 
   return 'waiting';
 }
 
 // ─── KURAL: FIYATSIZ METİN İLANI ─────────────────────────────────────────────
-// 1. kez: grup içinde @mention uyarı + deleteDelay sonra sil
-// 2. kez (15dk içinde): sessiz anında sil
 async function kuralFiyatsizMetin({
   sock, chatId, realUserId, groupName, msg, userId, userName, userPhone, msgText, hasMedia,
   noPriceCounter, deletedAdsLog, saveDeletedLog, io, stats, getDeleteKey, downloadMediaMessage,
@@ -296,33 +394,23 @@ async function kuralFiyatsizMetin({
 
   const delKey = getDeleteKey(msg);
   const msgId = msg.key.id;
+  const batchKey = `${userId}_text_${msgId}`;
+  const capturedMsg = msg;
 
   if (quota.warned) {
-    // 2. kez: anında sessiz sil
     const tryDel = async (a) => { try { await sock.sendMessage(chatId, { delete: delKey }); } catch(e) { if (a < 3) setTimeout(() => tryDel(a+1), 5000); } };
     tryDel(1);
     stats.messagesDeleted++;
-    let mediaInfo = null;
-    try { if (hasMedia) mediaInfo = await downloadMediaMessage(msg); } catch(e) {}
-    deletedAdsLog.unshift({
-      id: Date.now().toString(),
-      tarih: new Date().toLocaleDateString('tr-TR'),
-      saat: new Date().toLocaleTimeString('tr-TR'),
-      timestamp: new Date().toISOString(),
-      kullanici: userName || userPhone, telefon: userPhone, userId,
-      grupId: chatId, grup: groupName, mesaj: msgText || '(ilan)',
-      sebep: 'Fiyatsız ilan (sessiz)', topluAdet: 1,
-      medyaData: mediaInfo?.data || null, medyaMimetype: mediaInfo?.mimetype || null,
-      medyaListesi: mediaInfo ? [{ data: mediaInfo.data, mimetype: mediaInfo.mimetype, caption: msgText || '' }] : []
-    });
-    if (deletedAdsLog.length > 500) deletedAdsLog.splice(500);
+
+    getOrCreateBatchLog({ batchKey, deletedAdsLog, userId, userName, userPhone, chatId, groupName, sebep: 'Fiyatsız ilan (sessiz)' });
+    if (hasMedia) await addMediaToBatch({ batchKey, msg: capturedMsg, caption: msgText, deletedAdsLog });
+    else { const t = batchLogTracker[batchKey]; if (t) { t.entry.topluAdet++; t.entry.mesaj = msgText || '(ilan)'; } }
     saveDeletedLog();
     io.emit('log', { type: 'deleted', user: userName || userPhone, group: groupName });
     io.emit('deleted_ads_updated', { total: deletedAdsLog.length });
     return 'deleted';
   }
 
-  // 1. kez: grup içinde @mention uyarı
   quota.warned = true;
   quota.warnedTime = Date.now();
   try {
@@ -331,9 +419,6 @@ async function kuralFiyatsizMetin({
       mentions: [realUserId]
     });
   } catch(e) {}
-
-  let mediaInfo = null;
-  try { if (hasMedia) mediaInfo = await downloadMediaMessage(msg); } catch(e) {}
 
   const delUserId2 = userId;
   const delText2 = msgText;
@@ -347,17 +432,10 @@ async function kuralFiyatsizMetin({
     const tryDel3 = async (a) => { try { await sock.sendMessage(delChatId2, { delete: delKey }); } catch(e) { if (a < 3) setTimeout(() => tryDel3(a+1), 5000); } };
     tryDel3(1);
     stats.messagesDeleted++;
-    deletedAdsLog.unshift({
-      id: Date.now().toString(),
-      tarih: new Date().toLocaleDateString('tr-TR'),
-      saat: new Date().toLocaleTimeString('tr-TR'),
-      timestamp: new Date().toISOString(),
-      kullanici: delUserName2 || delUserPhone2, telefon: delUserPhone2, userId: delUserId2,
-      grupId: delChatId2, grup: delGroupName2, mesaj: delText2 || '(ilan)',
-      sebep: 'Fiyatsız ilan (otomatik)', topluAdet: 1,
-      medyaData: mediaInfo?.data || null, medyaMimetype: mediaInfo?.mimetype || null
-    });
-    if (deletedAdsLog.length > 500) deletedAdsLog.splice(500);
+
+    getOrCreateBatchLog({ batchKey, deletedAdsLog, userId: delUserId2, userName: delUserName2, userPhone: delUserPhone2, chatId: delChatId2, groupName: delGroupName2, sebep: 'Fiyatsız ilan (otomatik)' });
+    if (hasMedia) await addMediaToBatch({ batchKey, msg: capturedMsg, caption: delText2, deletedAdsLog });
+    else { const t = batchLogTracker[batchKey]; if (t) { t.entry.topluAdet++; t.entry.mesaj = delText2 || '(ilan)'; } }
     saveDeletedLog();
     io.emit('log', { type: 'deleted', user: delUserName2 || delUserPhone2, group: delGroupName2 });
     io.emit('deleted_ads_updated', { total: deletedAdsLog.length });
@@ -366,4 +444,21 @@ async function kuralFiyatsizMetin({
   return 'warned';
 }
 
-module.exports = { hasFiyatMi, kuralResim, kuralFiyatliResim, kural3SetPaidTime, kural3Check, kuralFiyatsizMetin };
+/**
+ * POST-WARN bloğundan çağrılabilen standalone medya kaydetme fonksiyonu.
+ * index.js'in MEDIA_DIR'ini kullanır (setMediaDir ile set edilmeli).
+ */
+async function saveMediaToDir(msg, batchKey, index) {
+  return saveMediaFile(msg, null, batchKey, index);
+}
+
+module.exports = {
+  hasFiyatMi,
+  kuralResim,
+  kuralFiyatliResim,
+  kural3SetPaidTime,
+  kural3Check,
+  kuralFiyatsizMetin,
+  setMediaDir,
+  saveMediaToDir
+};
