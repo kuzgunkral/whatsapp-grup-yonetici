@@ -155,7 +155,8 @@ async function addMediaToBatch({ batchKey, msg, caption, deletedAdsLog }) {
 async function kuralResim({
   sock, chatId, realUserId, msg, userId, userName, userPhone, groupName, msgText,
   spamTracker, stats, reklamMuafMsgIds, deletedAdsLog, saveDeletedLog, io,
-  getDeleteKey, downloadMediaMessage, config
+  getDeleteKey, downloadMediaMessage, config,
+  getK2BatchHasFiyat, kural3SetPaidTime
 }) {
   const WAIT_MS = (config.photoWaitSec || 30) * 1000;
   const ONE_HOUR = 60 * 60 * 1000;
@@ -221,12 +222,20 @@ async function kuralResim({
   const delGroupName = groupName;
   const delUserPhone = userPhone;
   const delUserName = userName;
+  const k1WindowStart = t.windowStart;
   const batchWindowStart = t.windowStart;
   const capturedMsg = msg;
 
   setTimeout(async () => {
     if (reklamMuafMsgIds.has(delMsgId)) { reklamMuafMsgIds.delete(delMsgId); return; }
     if (hasFiyatMi(delText)) return;
+
+    // K2 muafiyet kontrolü: batch'te fiyatlı resim geldiyse K1'i koru, K3 başlat
+    if (typeof getK2BatchHasFiyat === 'function' && getK2BatchHasFiyat(delUserId, k1WindowStart)) {
+      console.log(`[K1-MUAF] user=${delUserId} → k2 fiyatlı var, K1 korunuyor, K3 başlıyor`);
+      if (typeof kural3SetPaidTime === 'function') kural3SetPaidTime(delUserId);
+      return;
+    }
 
     const tryDel = async (a) => { try { await sock.sendMessage(delChatId, { delete: delKey }); } catch(e) { if (a < 3) setTimeout(() => tryDel(a+1), 5000); } };
     tryDel(1);

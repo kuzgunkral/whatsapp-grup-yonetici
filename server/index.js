@@ -536,10 +536,25 @@ async function handleMessage(msg) {
         });
       } else {
         // Henüz fiyatlı resim yok → Kural 1
+        // getK2BatchHasFiyat: 30sn beklerken batch'e fiyatlı resim geldiyse K1'i koru, K3 başlat
+        const kural3SetPaidTimeWrappedK1 = (uid) => {
+          kural3SetPaidTime(uid);
+          delete k2BatchTracker[uid];
+        };
         await kuralResim({
           sock, chatId, realUserId, msg, userId, userName, userPhone, groupName, msgText,
           spamTracker, stats, reklamMuafMsgIds, deletedAdsLog, saveDeletedLog, io, getDeleteKey,
-          downloadMediaMessage, config
+          downloadMediaMessage, config,
+          getK2BatchHasFiyat: (uid, k1WindowStart) => {
+            const t2 = k2BatchTracker[uid];
+            if (!t2 || !t2.hasFiyat) return false;
+            const WAIT_MS_CHECK = (config.photoWaitSec || 30) * 1000;
+            if (Date.now() - t2.windowStart > WAIT_MS_CHECK + 2000) return false;
+            // K1 ve K2 pencereleri aynı zamanda açılmış olmalı (500ms tolerans)
+            if (Math.abs(t2.windowStart - k1WindowStart) > 500) return false;
+            return true;
+          },
+          kural3SetPaidTime: kural3SetPaidTimeWrappedK1
         });
       }
       return;
