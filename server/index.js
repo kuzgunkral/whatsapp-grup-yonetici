@@ -1008,9 +1008,18 @@ app.post('/api/restore-ad', async (req, res) => {
           isVideo: !!(m.mimetype && m.mimetype.startsWith('video')),
           rawCaption: (m.caption && m.caption !== 'muaf') ? m.caption : ''
         }));
-        if (metaItems.length === 0) { result = { success: false, error: 'Geri yüklenecek içerik yok' }; return; }
+        if (metaItems.length === 0) { result = { success: false, error: 'Medya listesi boş' }; return; }
         const firstValidMeta = metaItems.find(i => !!readMediaFile(i.file));
-        if (!firstValidMeta) { result = { success: false, error: 'Geri yüklenecek içerik yok' }; return; }
+        if (!firstValidMeta) {
+          // Medya dosyaları diskten silinmiş — mesaj varsa text olarak gönder
+          if (ad.mesaj) {
+            const sent = await sock.sendMessage(target, { text: `[Geri Yüklenen İlan]\n${ad.mesaj}` });
+            if (sent && sent.key && sent.key.id) reklamMuafMsgIds.add(sent.key.id);
+          } else {
+            result = { success: false, error: 'Medya dosyaları bulunamadı (disk temizlendi)' };
+            return;
+          }
+        }
         const firstCaption = firstValidMeta.rawCaption || ad.mesaj || '';
         if (metaItems.length === 1) {
           // Tek resim — albüm gereksiz
