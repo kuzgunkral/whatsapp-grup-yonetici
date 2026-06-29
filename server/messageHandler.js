@@ -329,6 +329,12 @@ async function kuralFiyatliResim({
 
   const batchKey = `${userId}_k2_${ft.windowStart}`;
 
+  // Fiyatlı resim geldiği anda K3'ü aktif et — 30sn bekleme yok
+  // k2BatchHasFiyat true ise bu resim fiyatlı, K3 hemen başlasın
+  if (k2BatchHasFiyat && typeof kural3SetPaidTime === 'function') {
+    kural3SetPaidTime(userId);
+  }
+
   // 10+ → anında sil
   if (ft.count > 10) {
     const gw = globalWarn10Tracker[userId] || 0;
