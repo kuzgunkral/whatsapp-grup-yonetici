@@ -365,8 +365,10 @@ async function handleMessage(msg) {
       msg.message?.stickerMessage || msg.message?.audioMessage ||
       msg.message?.viewOnceMessage || msg.message?.viewOnceMessageV2);
 
-    // Bot kendi mesajlarını (geri yükleme dahil) tamamen atla — kural döngüsü önleme
-    if (isFromMe) return;
+    // Bot kendi uyarı/sistem mesajlarını atla — döngü önleme (restore resimleri reklamMuafMsgIds ile korunur)
+    if (isFromMe && msgText && (msgText.includes('Grup Yönetimi') || msgText.includes('tespit edildi') || msgText.includes('susturulm') || msgText.includes('━━━'))) return;
+    if (isFromMe && msgText && (msgText.includes('Bu ilan reklam') || msgText.includes('Reklam ücreti') || msgText.includes('Geri Yüklenen'))) return;
+    if (isFromMe && !hasMedia && !msgText) return;
 
     const userId = msg.key.participant || msg.key.remoteJid;
     let isAdmin = isFromMe;
