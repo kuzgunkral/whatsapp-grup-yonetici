@@ -1015,10 +1015,15 @@ app.post('/api/restore-ad', async (req, res) => {
           if (ad.mesaj) {
             const sent = await sock.sendMessage(target, { text: `[Geri Yüklenen İlan]\n${ad.mesaj}` });
             if (sent && sent.key && sent.key.id) reklamMuafMsgIds.add(sent.key.id);
+            if (ad.userId) { delete spamTracker[ad.userId]; delete k2BatchTracker[ad.userId]; kural3ResetUser(ad.userId); }
+            deletedAdsLog = deletedAdsLog.filter(a => a.id !== lookupId);
+            saveDeletedLog();
+            io.emit('deleted_ads_updated', { total: deletedAdsLog.length });
+            result = { success: true };
           } else {
             result = { success: false, error: 'Medya dosyaları bulunamadı (disk temizlendi)' };
-            return;
           }
+          return;
         }
         const firstCaption = firstValidMeta.rawCaption || ad.mesaj || '';
         if (metaItems.length === 1) {
@@ -1269,7 +1274,7 @@ setInterval(() => { io.emit('stats', stats); }, 10000);
 // ─── MEDYA TEMİZLEME (24 saatlik) ────────────────────────────────────────────
 // 24 saati geçen medya dosyaları diskten silinir + log kaydındaki referanslar temizlenir
 function cleanOldMedia() {
-  const MAX_AGE_MS = 24 * 60 * 60 * 1000; // 24 saat
+  const MAX_AGE_MS = 6 * 60 * 60 * 1000; // 6 saat (disk dolmasin)
   const now = Date.now();
   try {
     if (!fs.existsSync(MEDIA_DIR)) return;
