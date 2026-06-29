@@ -233,7 +233,8 @@ async function kuralResim({
     saveDeletedLog();
     io.emit('log', { type: 'deleted', user: delUserName || delUserPhone, group: delGroupName });
     io.emit('deleted_ads_updated', { total: deletedAdsLog.length });
-    setTimeout(() => { delete batchLogTracker[bKey]; }, 10000);
+    // WAIT_MS + 15sn: son resim timer'ı dolduğunda tracker hâlâ mevcut olsun
+    setTimeout(() => { delete batchLogTracker[bKey]; }, WAIT_MS + 15000);
   }, WAIT_MS);
 
   return 'waiting';
@@ -342,18 +343,13 @@ async function kuralFiyatliResim({
     console.log(`🗑️ [K2-10+] user=${userId} count=${ft.count}`);
     if (typeof onWarn10 === 'function') onWarn10(userId);
 
-    // K2-10+ tetiklendiğinde K3'ü aktif et — sonraki resimler K3 batch'ine gitsin
-    // Böylece K2-10+ resimleri de K3 batch'inde toplanır, geri yükleyince birlikte gelir
-    if (typeof kural3SetPaidTime === 'function') kural3SetPaidTime(userId);
-    const k3Time = spam5dkTracker[userId] && spam5dkTracker[userId].paidTime;
-    const k2k3BatchKey = k3Time ? `${userId}_k3_${k3Time}` : batchKey;
-
-    getOrCreateBatchLog({ batchKey: k2k3BatchKey, deletedAdsLog, userId, userName, userPhone, chatId, groupName, sebep: 'Fiyatlı resim (10+ adet)' });
-    await addMediaToBatch({ batchKey: k2k3BatchKey, msg, caption: msgText, deletedAdsLog });
+    // K2-10+ kendi batch'inde — K3 ile karıştırma
+    getOrCreateBatchLog({ batchKey, deletedAdsLog, userId, userName, userPhone, chatId, groupName, sebep: 'Fiyatlı resim (10+ adet)' });
+    await addMediaToBatch({ batchKey, msg, caption: msgText, deletedAdsLog });
     saveDeletedLog();
     io.emit('log', { type: 'deleted', user: userName || userPhone, group: groupName });
     io.emit('deleted_ads_updated', { total: deletedAdsLog.length });
-    setTimeout(() => { delete batchLogTracker[k2k3BatchKey]; }, WAIT_MS + 10000);
+    setTimeout(() => { delete batchLogTracker[batchKey]; }, WAIT_MS + 10000);
     return 'deleted';
   }
 
@@ -387,7 +383,8 @@ async function kuralFiyatliResim({
     saveDeletedLog();
     io.emit('log', { type: 'deleted', user: delUserName || delUserPhone, group: delGroupName });
     io.emit('deleted_ads_updated', { total: deletedAdsLog.length });
-    setTimeout(() => { delete batchLogTracker[bKey]; }, 10000);
+    // WAIT_MS + 15sn: son resim timer'ı dolduğunda tracker hâlâ mevcut olsun
+    setTimeout(() => { delete batchLogTracker[bKey]; }, WAIT_MS + 15000);
   }, WAIT_MS);
 
   if (!ft.cleanupScheduled) {
