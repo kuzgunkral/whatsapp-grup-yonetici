@@ -1,0 +1,9 @@
+{
+  "name": "whatsapp-bot-engine",
+  "version": "1.0.0",
+  "main": "main.js",
+  "dependencies": {
+    "baileys": "^7.0.0-rc13",
+    "pino": "^8.17.2"
+  }
+}

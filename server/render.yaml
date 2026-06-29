@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: whatsapp-bot
+    runtime: node
+    buildCommand: npm install
+    startCommand: node index.js
+    envVars:
+      - key: NODE_VERSION
+        value: "20"
+      - key: DATA_DIR
+        value: /data
+    disk:
+      name: whatsapp-bot-data
+      mountPath: /data
+      sizeGB: 1
