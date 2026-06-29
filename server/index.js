@@ -544,6 +544,8 @@ async function handleMessage(msg) {
         const kural3SetPaidTimeWrappedK1 = (uid) => {
           kural3SetPaidTime(uid);
           delete k2BatchTracker[uid];
+          // K3 başlarken spamTracker'ı sıfırla — eski warn10Time POST-WARN'a düşmesin
+          if (spamTracker[uid]) { spamTracker[uid].imgCount = 0; spamTracker[uid].warn10Time = 0; spamTracker[uid].windowStart = Date.now(); }
         };
         await kuralResim({
           sock, chatId, realUserId, msg, userId, userName, userPhone, groupName, msgText,
