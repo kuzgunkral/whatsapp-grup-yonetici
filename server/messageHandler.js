@@ -155,7 +155,7 @@ async function addMediaToBatch({ batchKey, msg, caption, deletedAdsLog }) {
 async function kuralResim({
   sock, chatId, realUserId, msg, userId, userName, userPhone, groupName, msgText,
   spamTracker, stats, reklamMuafMsgIds, deletedAdsLog, saveDeletedLog, io,
-  getDeleteKey, downloadMediaMessage, config, getK2BatchHasFiyat
+  getDeleteKey, downloadMediaMessage, config
 }) {
   const WAIT_MS = (config.photoWaitSec || 30) * 1000;
   const ONE_HOUR = 60 * 60 * 1000;
@@ -227,8 +227,6 @@ async function kuralResim({
   setTimeout(async () => {
     if (reklamMuafMsgIds.has(delMsgId)) { reklamMuafMsgIds.delete(delMsgId); return; }
     if (hasFiyatMi(delText)) return;
-    // Race condition fix: albümde caption'sız resimler K1'e düşse de K2 batch'i varsa koru
-    if (typeof getK2BatchHasFiyat === 'function' && getK2BatchHasFiyat(delUserId, batchWindowStart)) return;
 
     const tryDel = async (a) => { try { await sock.sendMessage(delChatId, { delete: delKey }); } catch(e) { if (a < 3) setTimeout(() => tryDel(a+1), 5000); } };
     tryDel(1);
@@ -241,7 +239,6 @@ async function kuralResim({
     saveDeletedLog();
     io.emit('log', { type: 'deleted', user: delUserName || delUserPhone, group: delGroupName });
     io.emit('deleted_ads_updated', { total: deletedAdsLog.length });
-    // WAIT_MS + 15sn: son resim timer'ı dolduğunda tracker hâlâ mevcut olsun
     setTimeout(() => { delete batchLogTracker[bKey]; }, WAIT_MS + 15000);
   }, WAIT_MS);
 
@@ -391,7 +388,6 @@ async function kuralFiyatliResim({
     saveDeletedLog();
     io.emit('log', { type: 'deleted', user: delUserName || delUserPhone, group: delGroupName });
     io.emit('deleted_ads_updated', { total: deletedAdsLog.length });
-    // WAIT_MS + 15sn: son resim timer'ı dolduğunda tracker hâlâ mevcut olsun
     setTimeout(() => { delete batchLogTracker[bKey]; }, WAIT_MS + 15000);
   }, WAIT_MS);
 

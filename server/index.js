@@ -467,7 +467,7 @@ async function handleMessage(msg) {
         const delGroupName = groupName;
         const delUserPhone = userPhone;
         const delUserName = userName;
-        // POST-WARN'a özel ayrı batch key — K3 aktifken buraya girilmez, K1 log'una karışmaz
+        // POST-WARN'a özel ayrı batch key — K1 log'una karışmasın
         const postWarnWindowKey = st && st.warn10Time ? st.warn10Time : (k2BatchTracker[userId] && k2BatchTracker[userId].warn10Time ? k2BatchTracker[userId].warn10Time : Date.now());
         const postWarnBatchKey = `${userId}_pw_${postWarnWindowKey}`;
         const capturedMsg = msg;
@@ -539,18 +539,7 @@ async function handleMessage(msg) {
         await kuralResim({
           sock, chatId, realUserId, msg, userId, userName, userPhone, groupName, msgText,
           spamTracker, stats, reklamMuafMsgIds, deletedAdsLog, saveDeletedLog, io, getDeleteKey,
-          downloadMediaMessage, config,
-          getK2BatchHasFiyat: (uid, k1WindowStart) => {
-            const t2 = k2BatchTracker[uid];
-            if (!t2 || !t2.hasFiyat) return false;
-            const WAIT_MS_CHECK = (config.photoWaitSec || 30) * 1000;
-            // Pencere süresi geçmemiş olmalı
-            if (Date.now() - t2.windowStart > WAIT_MS_CHECK + 2000) return false;
-            // K1 ve K2 pencereleri aynı zamanda açılmış olmalı (500ms tolerans — albüm race condition)
-            // 500ms üstü fark = farklı ilanlar, K1 korunmamalı
-            if (Math.abs(t2.windowStart - k1WindowStart) > 500) return false;
-            return true;
-          }
+          downloadMediaMessage, config
         });
       }
       return;
@@ -875,24 +864,6 @@ app.post('/api/open-group', async (req, res) => {
   } catch(e) { res.json({ success: false, error: e.message }); }
 });
 
-// ─── API: TOGGLE GROUP (aç/kapat tek buton) ──────────────────────────────────
-app.post('/api/toggle-group', async (req, res) => {
-  if (!isReady) return res.json({ success: false, error: 'Bağlı değil' });
-  const groupId = req.body.groupId || activeGroupId;
-  if (!groupId) return res.json({ success: false, error: 'Grup yok' });
-  try {
-    const meta = await sock.groupMetadata(groupId);
-    const isClosed = meta.announce === true || meta.announce === 'true';
-    if (isClosed) {
-      await sock.groupSettingUpdate(groupId, 'not_announcement');
-      res.json({ success: true, closed: false });
-    } else {
-      await sock.groupSettingUpdate(groupId, 'announcement');
-      res.json({ success: true, closed: true });
-    }
-  } catch(e) { res.json({ success: false, error: e.message }); }
-});
-
 // ─── API: PAUSE GROUP (toggle) ────────────────────────────────────────────────
 app.post('/api/pause-group', (req, res) => {
   const groupId = req.body.groupId || activeGroupId;
@@ -999,7 +970,7 @@ app.get('/api/media/:filename', (req, res) => {
 });
 
 // ─── API: RESTORE AD ─────────────────────────────────────────────────────────
-// Tüm resimler diskten okunur, tek blokta sıralı gönderilir.
+// Tüm resimler dискten okunur, tek blokta sıralı gönderilir.
 app.post('/api/restore-ad', async (req, res) => {
   const { adId, id, groupId } = req.body;
   const lookupId = adId || id;
@@ -1013,51 +984,26 @@ app.post('/api/restore-ad', async (req, res) => {
     try {
       const validMedia = (ad.medyaListesi || []).filter(m => m && m.file);
       if (validMedia.length > 0) {
-        // Meta verileri topla (buf yok — RAM tasarrufu)
-        const metaItems = validMedia.map(m => ({
-          file: m.file,
-          isVideo: !!(m.mimetype && m.mimetype.startsWith('video')),
-          rawCaption: (m.caption && m.caption !== 'muaf') ? m.caption : ''
-        }));
-        if (metaItems.length === 0) { result = { success: false, error: 'Geri yüklenecek içerik yok' }; return; }
-
-        // İlk geçerli resmin caption'ını bul
-        const firstValidMeta = metaItems.find(i => { const b = readMediaFile(i.file); return !!b; });
-        if (!firstValidMeta) { result = { success: false, error: 'Geri yüklenecek içerik yok' }; return; }
-        const firstCaption = firstValidMeta.rawCaption || ad.mesaj || '';
-
-        if (metaItems.length === 1) {
-          // Tek resim — albüm gereksiz, direkt yükle + hemen serbest bırak
-          const buf = readMediaFile(metaItems[0].file);
-          if (buf) {
-            const sent = await sock.sendMessage(target, metaItems[0].isVideo
-              ? { video: buf, caption: firstCaption }
-              : { image: buf, caption: firstCaption }
-            );
-            if (sent && sent.key && sent.key.id) reklamMuafMsgIds.add(sent.key.id);
-          }
-        } else {
-          // Çoklu resim — Baileys album API, her resmi tek tek yükle (RAM tasarrufu)
-          const imageCount = metaItems.filter(i => !i.isVideo).length;
-          const videoCount = metaItems.filter(i => i.isVideo).length;
-          const albumSent = await sock.sendMessage(target, {
-            album: { expectedImageCount: imageCount, expectedVideoCount: videoCount }
-          });
-          const albumParentKey = albumSent && albumSent.key ? albumSent.key : null;
-          if (albumSent && albumSent.key && albumSent.key.id) reklamMuafMsgIds.add(albumSent.key.id);
-          let isFirst = true;
-          for (const meta of metaItems) {
-            const buf = readMediaFile(meta.file); // tek tek oku, gönder, GC'ye bırak
-            if (!buf) continue;
-            const caption = isFirst ? firstCaption : '';
-            isFirst = false;
-            const msgPayload = meta.isVideo
-              ? { video: buf, caption }
-              : { image: buf, caption };
-            if (albumParentKey) msgPayload.albumParentKey = albumParentKey;
-            const sent = await sock.sendMessage(target, msgPayload);
-            if (sent && sent.key && sent.key.id) reklamMuafMsgIds.add(sent.key.id);
-          }
+        // Tüm resimleri önce belleğe yükle — hepsi geçerliyse gönder
+        const mediaItems = [];
+        for (const m of validMedia) {
+          const buf = readMediaFile(m.file);
+          if (!buf) continue;
+          const isVideo = m.mimetype && m.mimetype.startsWith('video');
+          const rawCaption = (m.caption && m.caption !== 'muaf') ? m.caption : '';
+          mediaItems.push({ buf, isVideo, rawCaption });
+        }
+        if (mediaItems.length === 0) { result = { success: false, error: 'Geri yüklenecek içerik yok' }; return; }
+        // Caption sadece ilk resimde
+        const firstCaption = mediaItems[0].rawCaption || ad.mesaj || '';
+        for (let i = 0; i < mediaItems.length; i++) {
+          const item = mediaItems[i];
+          const caption = i === 0 ? firstCaption : '';
+          const sent = await sock.sendMessage(target, item.isVideo
+            ? { video: item.buf, caption }
+            : { image: item.buf, caption }
+          );
+          if (sent && sent.key && sent.key.id) reklamMuafMsgIds.add(sent.key.id);
         }
       } else if (ad.mesaj) {
         const sent = await sock.sendMessage(target, { text: ad.mesaj });
@@ -1092,50 +1038,28 @@ app.post('/api/restore-as-ad', async (req, res) => {
     if (!target) return res.json({ success: false, error: 'Hedef grup yok' });
     const validMedia = (ad.medyaListesi || []).filter(m => m && m.file);
     if (validMedia.length > 0) {
-      // Meta verileri topla (buf yok — RAM tasarrufu)
-      const metaItems = validMedia.map(m => ({
-        file: m.file,
-        isVideo: !!(m.mimetype && m.mimetype.startsWith('video')),
-        rawCaption: (m.caption && m.caption !== 'muaf') ? m.caption : ''
-      }));
-      if (metaItems.length > 0) {
-        const firstValidM = metaItems.find(i => !!readMediaFile(i.file));
-        const firstCaption = firstValidM ? (firstValidM.rawCaption || ad.mesaj || '') : (ad.mesaj || '');
-        if (metaItems.length === 1) {
-          const buf = readMediaFile(metaItems[0].file);
-          if (buf) {
-            const sent = await sock.sendMessage(target, metaItems[0].isVideo
-              ? { video: buf, caption: firstCaption }
-              : { image: buf, caption: firstCaption }
-            );
-            if (sent && sent.key && sent.key.id) reklamMuafMsgIds.add(sent.key.id);
-          }
-        } else {
-          const imageCount = metaItems.filter(i => !i.isVideo).length;
-          const videoCount = metaItems.filter(i => i.isVideo).length;
-          const albumSent = await sock.sendMessage(target, {
-            album: { expectedImageCount: imageCount, expectedVideoCount: videoCount }
-          });
-          const albumParentKey = albumSent && albumSent.key ? albumSent.key : null;
-          if (albumSent && albumSent.key && albumSent.key.id) reklamMuafMsgIds.add(albumSent.key.id);
-          let isFirst = true;
-          for (const meta of metaItems) {
-            const buf = readMediaFile(meta.file);
-            if (!buf) continue;
-            const caption = isFirst ? firstCaption : '';
-            isFirst = false;
-            const msgPayload = meta.isVideo
-              ? { video: buf, caption }
-              : { image: buf, caption };
-            if (albumParentKey) msgPayload.albumParentKey = albumParentKey;
-            const sent = await sock.sendMessage(target, msgPayload);
-            if (sent && sent.key && sent.key.id) reklamMuafMsgIds.add(sent.key.id);
-          }
+      const mediaItems = [];
+      for (const m of validMedia) {
+        const buf = readMediaFile(m.file);
+        if (!buf) continue;
+        const isVideo = m.mimetype && m.mimetype.startsWith('video');
+        const rawCaption = (m.caption && m.caption !== 'muaf') ? m.caption : '';
+        mediaItems.push({ buf, isVideo, rawCaption });
+      }
+      if (mediaItems.length > 0) {
+        const firstCaption = mediaItems[0].rawCaption || ad.mesaj || '';
+        for (let i = 0; i < mediaItems.length; i++) {
+          const item = mediaItems[i];
+          const caption = i === 0 ? firstCaption : '';
+          const sent = await sock.sendMessage(target, item.isVideo
+            ? { video: item.buf, caption }
+            : { image: item.buf, caption }
+          );
+          if (sent && sent.key && sent.key.id) reklamMuafMsgIds.add(sent.key.id);
         }
       }
     } else if (ad.mesaj) {
-      const sent = await sock.sendMessage(target, { text: ad.mesaj });
-      if (sent && sent.key && sent.key.id) reklamMuafMsgIds.add(sent.key.id);
+      await sock.sendMessage(target, { text: ad.mesaj });
     }
     deletedAdsLog = deletedAdsLog.filter(a => a.id !== lookupId);
     saveDeletedLog();
