@@ -162,6 +162,12 @@ async function kuralResim({
   const now = Date.now();
   const POST_WARN_GRACE = 3000;
 
+  // Restore edilen mesajları K1'e sayma — reklamMuafMsgIds ile korunur
+  if (reklamMuafMsgIds && msg.key && msg.key.id && reklamMuafMsgIds.has(msg.key.id)) {
+    reklamMuafMsgIds.delete(msg.key.id);
+    return 'continue';
+  }
+
   if (!spamTracker[userId]) {
     spamTracker[userId] = { imgCount: 0, warn10Time: 0, windowStart: now };
   }
