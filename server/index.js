@@ -547,17 +547,16 @@ async function handleMessage(msg) {
           // K3 başlarken spamTracker'ı sıfırla — eski warn10Time POST-WARN'a düşmesin
           if (spamTracker[uid]) { spamTracker[uid].imgCount = 0; spamTracker[uid].warn10Time = 0; spamTracker[uid].windowStart = Date.now(); }
         };
-        await kuralResim({
+      await kuralResim({
           sock, chatId, realUserId, msg, userId, userName, userPhone, groupName, msgText,
           spamTracker, stats, reklamMuafMsgIds, deletedAdsLog, saveDeletedLog, io, getDeleteKey,
           downloadMediaMessage, config,
+          k2BatchTrackerRef: k2BatchTracker,
           getK2BatchHasFiyat: (uid, k1WindowStart) => {
             const t2 = k2BatchTracker[uid];
             if (!t2 || !t2.hasFiyat) return false;
             const WAIT_MS_CHECK = (config.photoWaitSec || 30) * 1000;
             if (Date.now() - t2.windowStart > WAIT_MS_CHECK + 2000) return false;
-            // K1 ve K2 pencereleri aynı zamanda açılmış olmalı (500ms tolerans)
-            if (Math.abs(t2.windowStart - k1WindowStart) > 500) return false;
             return true;
           },
           kural3SetPaidTime: kural3SetPaidTimeWrappedK1

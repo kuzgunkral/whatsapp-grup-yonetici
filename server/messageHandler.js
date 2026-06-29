@@ -71,7 +71,6 @@ function hasFiyatMi(text) {
     /\d+[\.,]?\d*\s*(tl|lira|₺|milyon|milyar|son)/i.test(text) ||
     /\d+[\.,]?\d*\s*k(?=[^a-zA-ZğüşıöçĞÜŞİÖÇ]|$)/i.test(text) ||
     /\d+[\.,]?\d*\s*bin(?=[^a-zA-ZğüşıöçĞÜŞİÖÇ]|$)/i.test(text) ||
-    /\d+[\.,]?\d*\s*m(?=[^a-zA-ZğüşıöçĞÜŞİÖÇ]|$)/i.test(text) ||
     yaziliSayiRegex.test(text) ||
     /(?:bir|iki|üç|uc|dort|dört|bes|beş|alti|altı|yedi|sekiz|dokuz|on|yirmi|otuz|kirk|kırk|elli|altmis|altmış|yetmiş|yetmis|seksen|doksan)\s+(?:yüz\s+)?(?:bin|milyon|milyar)/i.test(text) ||
     /(fiyat|tane|adet)\s*:?\s*\d+[\.,]?\d*|\d+[\.,]?\d*\s*(fiyat|tane|adet)/i.test(text) ||
@@ -156,7 +155,8 @@ async function kuralResim({
   sock, chatId, realUserId, msg, userId, userName, userPhone, groupName, msgText,
   spamTracker, stats, reklamMuafMsgIds, deletedAdsLog, saveDeletedLog, io,
   getDeleteKey, downloadMediaMessage, config,
-  getK2BatchHasFiyat, kural3SetPaidTime
+  getK2BatchHasFiyat, kural3SetPaidTime,
+  k2BatchTrackerRef   // index.js'ten gelen k2BatchTracker referansı
 }) {
   const WAIT_MS = (config.photoWaitSec || 30) * 1000;
   const ONE_HOUR = 60 * 60 * 1000;
@@ -226,13 +226,27 @@ async function kuralResim({
   const batchWindowStart = t.windowStart;
   const capturedMsg = msg;
 
+  // K2 batch tracker'ının bu penceredeki nesnesini yakala (referans olarak)
+  // 30sn sonra bu nesnenin hasFiyat değeri kontrol edilir
+  // Nesne değişirse (yeni pencere) eski referans hasFiyat=false kalır → doğru davranış
+  const capturedK2BatchObj = k2BatchTrackerRef ? k2BatchTrackerRef[userId] : null;
+
   setTimeout(async () => {
     if (reklamMuafMsgIds.has(delMsgId)) { reklamMuafMsgIds.delete(delMsgId); return; }
     if (hasFiyatMi(delText)) return;
 
     // K2 muafiyet kontrolü: batch'te fiyatlı resim geldiyse K1'i koru, K3 başlat
-    if (typeof getK2BatchHasFiyat === 'function' && getK2BatchHasFiyat(delUserId, k1WindowStart)) {
-      console.log(`[K1-MUAF] user=${delUserId} → k2 fiyatlı var, K1 korunuyor, K3 başlıyor`);
+    // capturedK2BatchObj referansını kullan — yeni pencere açılmışsa eski nesne hasFiyat=false kalır
+    const k2HasFiyatNow = capturedK2BatchObj && capturedK2BatchObj.hasFiyat === true;
+    if (k2HasFiyatNow) {
+      console.log(`[K1-MUAF] user=${delUserId} → k2 fiyatlı var (captured ref), K1 korunuyor, K3 başlıyor`);
+      if (typeof kural3SetPaidTime === 'function') kural3SetPaidTime(delUserId);
+      return;
+    }
+
+    // Ek kontrol: getK2BatchHasFiyat fonksiyonu varsa da kontrol et (geriye dönük uyumluluk)
+    if (!k2HasFiyatNow && typeof getK2BatchHasFiyat === 'function' && getK2BatchHasFiyat(delUserId, k1WindowStart)) {
+      console.log(`[K1-MUAF] user=${delUserId} → k2 fiyatlı var (fn check), K1 korunuyor, K3 başlıyor`);
       if (typeof kural3SetPaidTime === 'function') kural3SetPaidTime(delUserId);
       return;
     }
@@ -272,6 +286,7 @@ async function kural3Check({
 
   // Restore edilen mesajları K3 silmesin
   if (reklamMuafMsgIds && msg.key && msg.key.id && reklamMuafMsgIds.has(msg.key.id)) {
+    console.log(`[K3-MUAF-SKIP] user=${userId} msgId=${msg.key.id} → reklamMuafMsgIds'de var, K3 atlanıyor`);
     reklamMuafMsgIds.delete(msg.key.id);
     return 'continue';
   }
@@ -297,7 +312,7 @@ async function kural3Check({
   const tryDel = async (a) => { try { await sock.sendMessage(chatId, { delete: delKey }); } catch(e) { if (a < 3) setTimeout(() => tryDel(a+1), 5000); } };
   tryDel(1);
   stats.messagesDeleted++;
-  console.log(`🗑️ [K3-5DK] user=${userId}`);
+  console.log(`🗑️ [K3-5DK] user=${userId} paidTime=${tracker.paidTime} elapsed=${Math.round((now-tracker.paidTime)/1000)}sn`);
 
   const batchKey = `${userId}_k3_${tracker.paidTime}`;
   getOrCreateBatchLog({ batchKey, deletedAdsLog, userId, userName, userPhone, chatId, groupName, sebep: '5dk spam (Kural 3)' });
