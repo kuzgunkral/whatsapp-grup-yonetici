@@ -365,13 +365,14 @@ async function handleMessage(msg) {
       msg.message?.stickerMessage || msg.message?.audioMessage ||
       msg.message?.viewOnceMessage || msg.message?.viewOnceMessageV2);
 
-    // Bot kendi mesajlarını atla — restore resimleri reklamMuafMsgIds'e eklendi, onlar zaten kuralResim/kural3Check içinde korunur
-    // isFromMe=true mesajlar: uyarı metinleri + bot gönderdiği resimler (restore dahil) — hepsi atlanır
-    if (isFromMe) {
-      // reklamMuafMsgIds'den temizle (restore endpoint ID ekledi, burada tüketiyoruz)
-      if (msg.key && msg.key.id) reklamMuafMsgIds.delete(msg.key.id);
+    // Restore edilen mesajları en başta atla — kurallar işlemesin
+    if (msg.key && msg.key.id && reklamMuafMsgIds.has(msg.key.id)) {
+      reklamMuafMsgIds.delete(msg.key.id);
       return;
     }
+    // Bot kendi uyarı/sistem mesajlarını atla — döngü önleme
+    if (isFromMe && msgText && (msgText.includes('Grup Yönetimi') || msgText.includes('tespit edildi') || msgText.includes('susturulm') || msgText.includes('━━━'))) return;
+    if (isFromMe && msgText && (msgText.includes('Bu ilan reklam') || msgText.includes('Reklam ücreti') || msgText.includes('Geri Yüklenen'))) return;
 
     const userId = msg.key.participant || msg.key.remoteJid;
     let isAdmin = isFromMe;
