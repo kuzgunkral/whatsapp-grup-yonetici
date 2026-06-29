@@ -539,7 +539,17 @@ async function handleMessage(msg) {
         await kuralResim({
           sock, chatId, realUserId, msg, userId, userName, userPhone, groupName, msgText,
           spamTracker, stats, reklamMuafMsgIds, deletedAdsLog, saveDeletedLog, io, getDeleteKey,
-          downloadMediaMessage, config
+          downloadMediaMessage, config,
+          getK2BatchHasFiyat: (uid, k1WindowStart) => {
+            const t2 = k2BatchTracker[uid];
+            if (!t2 || !t2.hasFiyat) return false;
+            const WAIT_MS_CHECK = (config.photoWaitSec || 30) * 1000;
+            // Pencere süresi geçmemiş olmalı
+            if (Date.now() - t2.windowStart > WAIT_MS_CHECK + 2000) return false;
+            // K1 ve K2 pencereleri aynı zamanda açılmış olmalı (5sn tolerans — race condition)
+            if (Math.abs(t2.windowStart - k1WindowStart) > 5000) return false;
+            return true;
+          }
         });
       }
       return;
