@@ -303,9 +303,10 @@ async function kuralFiyatliResim({
 
   const existingFt = fiyatliResimTracker[userId];
   if (!existingFt || Date.now() - (existingFt.windowStart || 0) > WAIT_MS + 2000) {
+    // Yeni pencere: warn10Time sıfırla — eski pencereden taşıma yapma
     fiyatliResimTracker[userId] = {
       count: 0,
-      warn10Time: existingFt?.warn10Time || 0,
+      warn10Time: 0,
       cleanupScheduled: false,
       windowStart: Date.now()
     };
@@ -334,12 +335,18 @@ async function kuralFiyatliResim({
     console.log(`🗑️ [K2-10+] user=${userId} count=${ft.count}`);
     if (typeof onWarn10 === 'function') onWarn10(userId);
 
-    getOrCreateBatchLog({ batchKey, deletedAdsLog, userId, userName, userPhone, chatId, groupName, sebep: 'Fiyatlı resim (10+ adet)' });
-    await addMediaToBatch({ batchKey, msg, caption: msgText, deletedAdsLog });
+    // K2-10+ tetiklendiğinde K3'ü aktif et — sonraki resimler K3 batch'ine gitsin
+    // Böylece K2-10+ resimleri de K3 batch'inde toplanır, geri yükleyince birlikte gelir
+    if (typeof kural3SetPaidTime === 'function') kural3SetPaidTime(userId);
+    const k3Time = spam5dkTracker[userId] && spam5dkTracker[userId].paidTime;
+    const k2k3BatchKey = k3Time ? `${userId}_k3_${k3Time}` : batchKey;
+
+    getOrCreateBatchLog({ batchKey: k2k3BatchKey, deletedAdsLog, userId, userName, userPhone, chatId, groupName, sebep: 'Fiyatlı resim (10+ adet)' });
+    await addMediaToBatch({ batchKey: k2k3BatchKey, msg, caption: msgText, deletedAdsLog });
     saveDeletedLog();
     io.emit('log', { type: 'deleted', user: userName || userPhone, group: groupName });
     io.emit('deleted_ads_updated', { total: deletedAdsLog.length });
-    setTimeout(() => { delete batchLogTracker[batchKey]; }, WAIT_MS + 10000);
+    setTimeout(() => { delete batchLogTracker[k2k3BatchKey]; }, WAIT_MS + 10000);
     return 'deleted';
   }
 
@@ -464,6 +471,11 @@ function getK3PaidTime(userId) {
   return tracker.paidTime;
 }
 
+// Geri yükleme sonrası K3 muafiyeti ver — kullanıcı restore sonrası spam sayılmasın
+function kural3ResetUser(userId) {
+  delete spam5dkTracker[userId];
+}
+
 module.exports = {
   hasFiyatMi,
   kuralResim,
@@ -473,5 +485,6 @@ module.exports = {
   kuralFiyatsizMetin,
   setMediaDir,
   saveMediaToDir,
-  getK3PaidTime
+  getK3PaidTime,
+  kural3ResetUser
 };

@@ -6,7 +6,7 @@ const QRCode = require('qrcode');
 const pino = require('pino');
 const fs = require('fs');
 const path = require('path');
-const { hasFiyatMi, kuralResim, kuralFiyatliResim, kural3SetPaidTime, kural3Check, kuralFiyatsizMetin, setMediaDir, saveMediaToDir, getK3PaidTime } = require('./messageHandler');
+const { hasFiyatMi, kuralResim, kuralFiyatliResim, kural3SetPaidTime, kural3Check, kuralFiyatsizMetin, setMediaDir, saveMediaToDir, getK3PaidTime, kural3ResetUser } = require('./messageHandler');
 
 // ─── GLOBAL HATA YAKALAYICI ──────────────────────────────────────────────────
 // Baileys "closed session" ve diğer unhandled promise hatalarının process'i
@@ -930,14 +930,17 @@ app.post('/api/restore-ad', async (req, res) => {
           const buf = readMediaFile(m.file);
           if (!buf) continue;
           const isVideo = m.mimetype && m.mimetype.startsWith('video');
-          await sock.sendMessage(target, isVideo
+          const sent = await sock.sendMessage(target, isVideo
             ? { video: buf, caption: m.caption || '' }
             : { image: buf, caption: m.caption || '' }
           );
+          // Geri yüklenen mesaj bot tarafından silinmesin
+          if (sent && sent.key && sent.key.id) reklamMuafMsgIds.add(sent.key.id);
           await new Promise(r => setTimeout(r, 300));
         }
       } else if (ad.mesaj) {
-        await sock.sendMessage(target, { text: ad.mesaj });
+        const sent = await sock.sendMessage(target, { text: ad.mesaj });
+        if (sent && sent.key && sent.key.id) reklamMuafMsgIds.add(sent.key.id);
       } else { result = { success: false, error: 'Geri yüklenecek içerik yok' }; return; }
       deletedAdsLog = deletedAdsLog.filter(a => a.id !== lookupId);
       saveDeletedLog();
@@ -965,14 +968,17 @@ app.post('/api/restore-as-ad', async (req, res) => {
         const buf = readMediaFile(m.file);
         if (!buf) continue;
         const isVideo = m.mimetype && m.mimetype.startsWith('video');
-        await sock.sendMessage(target, isVideo
+        const sent = await sock.sendMessage(target, isVideo
           ? { video: buf, caption: m.caption || '' }
           : { image: buf, caption: m.caption || '' }
         );
+        // Geri yüklenen mesaj bot tarafından silinmesin
+        if (sent && sent.key && sent.key.id) reklamMuafMsgIds.add(sent.key.id);
         await new Promise(r => setTimeout(r, 300));
       }
     } else if (ad.mesaj) {
-      await sock.sendMessage(target, { text: ad.mesaj });
+      const sent = await sock.sendMessage(target, { text: ad.mesaj });
+      if (sent && sent.key && sent.key.id) reklamMuafMsgIds.add(sent.key.id);
     }
     deletedAdsLog = deletedAdsLog.filter(a => a.id !== lookupId);
     saveDeletedLog();
