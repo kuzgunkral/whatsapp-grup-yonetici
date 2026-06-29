@@ -712,26 +712,79 @@ app.post('/api/send-announcement', async (req, res) => {
   } catch(e) { res.json({ success: false, error: e.message }); }
 });
 
+// ─── YARDIMCI: mesajı muaf mı? (restore edilmiş veya log'dan yüklenen) ────────
+function isMuafMsg(m) {
+  if (!m || !m.key || !m.key.id) return false;
+  return reklamMuafMsgIds.has(m.key.id);
+}
+
+// ─── YARDIMCI: mesaj son 6 saat içinde mi? ───────────────────────────────────
+function isSon6Saat(m) {
+  const SIX_HOURS = 6 * 60 * 60 * 1000;
+  const ts = (m.messageTimestamp || 0) * 1000;
+  return (Date.now() - ts) < SIX_HOURS;
+}
+
+// ─── YARDIMCI: mesaj metnini çıkar ───────────────────────────────────────────
+function getMsgText(m) {
+  if (!m || !m.message) return '';
+  return m.message.conversation || m.message?.extendedTextMessage?.text ||
+    m.message?.imageMessage?.caption || m.message?.videoMessage?.caption ||
+    m.message?.documentMessage?.caption || '';
+}
+
 // ─── API: CLEAN NO PRICE ─────────────────────────────────────────────────────
+// Son 6 saati tarar; muaf, fiyatlı ve restore edilenler hariç fiyatsızları siler
 app.post('/api/clean-no-price', async (req, res) => {
   if (!isReady || !activeGroupId) return res.json({ success: false });
-  const msgs = groupMessages[activeGroupId] || [];
+  const msgs = (groupMessages[activeGroupId] || []).filter(isSon6Saat);
   let deleted = 0;
   for (const m of msgs) {
     try {
-      let text = m.message?.conversation || m.message?.extendedTextMessage?.text ||
-        m.message?.imageMessage?.caption || m.message?.videoMessage?.caption || '';
-      if (!hasFiyatMi(text)) {
-        await sock.sendMessage(activeGroupId, { delete: getDeleteKey(m) });
-        deleted++;
-        stats.messagesDeleted++;
-        await new Promise(r => setTimeout(r, 200));
-      }
+      if (isMuafMsg(m)) continue;               // restore edilmiş → atla
+      const text = getMsgText(m);
+      if (hasFiyatMi(text)) continue;            // fiyatlı → atla
+      await sock.sendMessage(activeGroupId, { delete: getDeleteKey(m) });
+      deleted++;
+      stats.messagesDeleted++;
+      await new Promise(r => setTimeout(r, 200));
     } catch(e) {}
   }
-  groupMessages[activeGroupId] = [];
+  // Silinen mesajları cache'den çıkar
+  groupMessages[activeGroupId] = (groupMessages[activeGroupId] || []).filter(m => !isSon6Saat(m) || isMuafMsg(m) || hasFiyatMi(getMsgText(m)));
   res.json({ success: true, deleted, count: deleted });
 });
+
+// ─── PERİYODİK TARAMA: her dakika son 6 saati tara ───────────────────────────
+// Fiyatsız + muaf olmayan + log'da olmayan ilanları siler
+// config.automation.noPrice kapalıysa çalışmaz
+let periodicScanActive = false;
+async function periodicNoPriceScan() {
+  if (!isReady || !activeGroupId || !config.automation.noPrice) return;
+  if (periodicScanActive) return; // önceki tarama bitmemişse atla
+  periodicScanActive = true;
+  try {
+    const msgs = (groupMessages[activeGroupId] || []).filter(isSon6Saat);
+    for (const m of msgs) {
+      try {
+        if (isMuafMsg(m)) continue;              // muaf → atla
+        const text = getMsgText(m);
+        if (hasFiyatMi(text)) continue;           // fiyatlı → atla
+        // Log'da bu mesaj ID'si var mı? (restore edilmiş olabilir)
+        const msgId = m.key && m.key.id;
+        if (msgId && deletedAdsLog.some(a =>
+          a.medyaListesi && a.medyaListesi.some(ml => ml.file && ml.file.includes(msgId))
+        )) continue;
+        await sock.sendMessage(activeGroupId, { delete: getDeleteKey(m) });
+        stats.messagesDeleted++;
+        await new Promise(r => setTimeout(r, 300));
+      } catch(e) {}
+    }
+  } catch(e) {}
+  periodicScanActive = false;
+}
+// Her dakika çalıştır
+setInterval(periodicNoPriceScan, 60 * 1000);
 
 // ─── API: AUTOMATION ──────────────────────────────────────────────────────────
 app.post('/api/automation', (req, res) => {
