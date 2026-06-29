@@ -452,6 +452,16 @@ async function saveMediaToDir(msg, batchKey, index) {
   return saveMediaFile(msg, null, batchKey, index);
 }
 
+/**
+ * K3 (5dk spam) tracker'ının aktif olup olmadığını döner.
+ * index.js POST-WARN bloğunda K3'e mi yoksa K1'e mi yazılacağını belirlemek için kullanılır.
+ */
+function getK3PaidTime(userId) {
+  const tracker = spam5dkTracker[userId];
+  if (!tracker || !tracker.paidTime) return null;
+  return tracker.paidTime;
+}
+
 module.exports = {
   hasFiyatMi,
   kuralResim,
@@ -460,5 +470,6 @@ module.exports = {
   kural3Check,
   kuralFiyatsizMetin,
   setMediaDir,
-  saveMediaToDir
+  saveMediaToDir,
+  getK3PaidTime
 };

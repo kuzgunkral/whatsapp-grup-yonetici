@@ -6,7 +6,7 @@ const QRCode = require('qrcode');
 const pino = require('pino');
 const fs = require('fs');
 const path = require('path');
-const { hasFiyatMi, kuralResim, kuralFiyatliResim, kural3SetPaidTime, kural3Check, kuralFiyatsizMetin, setMediaDir, saveMediaToDir } = require('./messageHandler');
+const { hasFiyatMi, kuralResim, kuralFiyatliResim, kural3SetPaidTime, kural3Check, kuralFiyatsizMetin, setMediaDir, saveMediaToDir, getK3PaidTime } = require('./messageHandler');
 
 // ─── GLOBAL HATA YAKALAYICI ──────────────────────────────────────────────────
 // Baileys "closed session" ve diğer unhandled promise hatalarının process'i
@@ -457,8 +457,12 @@ async function handleMessage(msg) {
         const delGroupName = groupName;
         const delUserPhone = userPhone;
         const delUserName = userName;
-        // POST-WARN batch key: K1 penceresine bağlı (aynı batch)
-        const postWarnBatchKey = st && st.windowStart ? `${userId}_${st.windowStart}` : `${userId}_pw_${Date.now()}`;
+        // POST-WARN batch key: K3 aktifse K3 batch'ine yaz (ayrı log), değilse K1 penceresine bağlı
+        const k3PaidTime = getK3PaidTime(userId);
+        const k3StillActive = k3PaidTime && (Date.now() - k3PaidTime < ((config.adIntervalMin || 5) * 60 * 1000));
+        const postWarnBatchKey = k3StillActive
+          ? `${userId}_k3_${k3PaidTime}`
+          : (st && st.windowStart ? `${userId}_${st.windowStart}` : `${userId}_pw_${Date.now()}`);
         const capturedMsg = msg;
         setTimeout(async () => {
           if (hasFiyatMi(delText)) return;
