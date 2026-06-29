@@ -931,21 +931,28 @@ app.post('/api/restore-ad', async (req, res) => {
     try {
       const validMedia = (ad.medyaListesi || []).filter(m => m && m.file);
       if (validMedia.length > 0) {
-        // Caption sadece ilk resimde — WhatsApp sonraki resimleri aynı "albüm"de gruplar
-        let firstCaption = true;
+        // Tüm resimleri önce belleğe yükle — hepsi geçerliyse gönder
+        const mediaItems = [];
         for (const m of validMedia) {
           const buf = readMediaFile(m.file);
-          if (!buf) continue;
+          if (!buf) continue; // disk'te yoksa atla
           const isVideo = m.mimetype && m.mimetype.startsWith('video');
-          const caption = firstCaption ? (m.caption || ad.mesaj || '') : '';
-          firstCaption = false;
-          const sent = await sock.sendMessage(target, isVideo
-            ? { video: buf, caption }
-            : { image: buf, caption }
+          // caption: "muaf" olan girdilerde boş bırak, diğerlerinde orijinali kullan
+          const rawCaption = (m.caption && m.caption !== 'muaf') ? m.caption : '';
+          mediaItems.push({ buf, isVideo, rawCaption });
+        }
+        if (mediaItems.length === 0) { result = { success: false, error: 'Geri yüklenecek içerik yok' }; return; }
+        // Caption sadece ilk resimde — boşsa ad.mesaj'a bak
+        const firstCaption = mediaItems[0].rawCaption || ad.mesaj || '';
+        // Tüm resimleri delay=0 ile art arda gönder → WhatsApp albüm olarak gruplar
+        for (let i = 0; i < mediaItems.length; i++) {
+          const item = mediaItems[i];
+          const caption = i === 0 ? firstCaption : '';
+          const sent = await sock.sendMessage(target, item.isVideo
+            ? { video: item.buf, caption }
+            : { image: item.buf, caption }
           );
-          // Geri yüklenen mesaj bot tarafından silinmesin
           if (sent && sent.key && sent.key.id) reklamMuafMsgIds.add(sent.key.id);
-          await new Promise(r => setTimeout(r, 100));
         }
       } else if (ad.mesaj) {
         const sent = await sock.sendMessage(target, { text: ad.mesaj });
@@ -980,21 +987,26 @@ app.post('/api/restore-as-ad', async (req, res) => {
     if (!target) return res.json({ success: false, error: 'Hedef grup yok' });
     const validMedia = (ad.medyaListesi || []).filter(m => m && m.file);
     if (validMedia.length > 0) {
-      // Caption sadece ilk resimde — WhatsApp sonraki resimleri aynı "albüm"de gruplar
-      let firstCaption = true;
+      // Tüm resimleri önce belleğe yükle
+      const mediaItems = [];
       for (const m of validMedia) {
         const buf = readMediaFile(m.file);
         if (!buf) continue;
         const isVideo = m.mimetype && m.mimetype.startsWith('video');
-        const caption = firstCaption ? (m.caption || ad.mesaj || '') : '';
-        firstCaption = false;
-        const sent = await sock.sendMessage(target, isVideo
-          ? { video: buf, caption }
-          : { image: buf, caption }
-        );
-        // Geri yüklenen mesaj bot tarafından silinmesin
-        if (sent && sent.key && sent.key.id) reklamMuafMsgIds.add(sent.key.id);
-        await new Promise(r => setTimeout(r, 100));
+        const rawCaption = (m.caption && m.caption !== 'muaf') ? m.caption : '';
+        mediaItems.push({ buf, isVideo, rawCaption });
+      }
+      if (mediaItems.length > 0) {
+        const firstCaption = mediaItems[0].rawCaption || ad.mesaj || '';
+        for (let i = 0; i < mediaItems.length; i++) {
+          const item = mediaItems[i];
+          const caption = i === 0 ? firstCaption : '';
+          const sent = await sock.sendMessage(target, item.isVideo
+            ? { video: item.buf, caption }
+            : { image: item.buf, caption }
+          );
+          if (sent && sent.key && sent.key.id) reklamMuafMsgIds.add(sent.key.id);
+        }
       }
     } else if (ad.mesaj) {
       const sent = await sock.sendMessage(target, { text: ad.mesaj });
