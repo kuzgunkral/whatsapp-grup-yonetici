@@ -421,7 +421,7 @@ async function handleMessage(msg) {
     }
 
     if (!config.automation.noPrice) return;
-    // Bot kendi mesajlarını atlar (isFromMe = bot'un attığı)
+    // Bot kendi mesajlarını atlar (bot = senin hesabın, isFromMe yeterli)
     if (isFromMe) return;
 
     const msgLower = msgText.toLowerCase();
