@@ -507,7 +507,7 @@ async function handleMessage(msg) {
 
       // KURAL 3: Her resimde önce kontrol edilir.
       // Sadece Kural 2 muafiyeti bittikten sonra aktif olur.
-      const res3 = await kural3Check({ sock, chatId, realUserId, msg, userId, userName, userPhone, groupName, msgText, stats, deletedAdsLog, saveDeletedLog, io, getDeleteKey, downloadMediaMessage, config });
+      const res3 = await kural3Check({ sock, chatId, realUserId, msg, userId, userName, userPhone, groupName, msgText, stats, deletedAdsLog, saveDeletedLog, io, getDeleteKey, downloadMediaMessage, config, reklamMuafMsgIds });
       if (res3 === 'deleted') {
         // Kural 3 aktifken k2BatchTracker sıfırla — sonraki resimler Kural 2'ye gitmesin
         delete k2BatchTracker[userId];

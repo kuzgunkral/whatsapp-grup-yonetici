@@ -248,11 +248,18 @@ function kural3SetPaidTime(userId) {
 
 async function kural3Check({
   sock, chatId, realUserId, msg, userId, userName, userPhone, groupName, msgText,
-  stats, deletedAdsLog, saveDeletedLog, io, getDeleteKey, downloadMediaMessage, config
+  stats, deletedAdsLog, saveDeletedLog, io, getDeleteKey, downloadMediaMessage, config,
+  reklamMuafMsgIds
 }) {
   const now = Date.now();
   const FIVE_MIN = (config.adIntervalMin || 5) * 60 * 1000;
   const ONE_HOUR = 60 * 60 * 1000;
+
+  // Restore edilen mesajları K3 silmesin
+  if (reklamMuafMsgIds && msg.key && msg.key.id && reklamMuafMsgIds.has(msg.key.id)) {
+    reklamMuafMsgIds.delete(msg.key.id);
+    return 'continue';
+  }
 
   const tracker = spam5dkTracker[userId];
   if (!tracker || !tracker.paidTime) return 'continue';
