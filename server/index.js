@@ -445,10 +445,15 @@ async function handleMessage(msg) {
       const k2BatchHasFiyat = k2BatchTracker[userId].hasFiyat;
       const k2Warn10Time = k2BatchTracker[userId].warn10Time || 0;
 
+      // K3 aktifse POST-WARN'ı atla — K2 muafiyeti biter bitmez K3 devreye girer
+      const k3PaidTimeCheck = getK3PaidTime(userId);
+      const k3ActiveNow = k3PaidTimeCheck && (Date.now() - k3PaidTimeCheck < ((config.adIntervalMin || 5) * 60 * 1000));
+
       // Kural 1'de 10 bırakıldıktan 3sn sonra gelen FIYATSIZ resimler → tüm kurallardan bağımsız, direkt 30sn bekle
       // Kural 2'de 10 bırakıldıktan 3sn sonra da bu path'e girer (fiyatlı da olsa)
-      if (((!k2BatchHasFiyat && st && st.warn10Time && Date.now() - st.warn10Time > POST_WARN_GRACE)) ||
-          (k2Warn10Time && Date.now() - k2Warn10Time > POST_WARN_GRACE)) {
+      // K3 aktifse bu bloğu tamamen atla — K3 check'e geç
+      if (!k3ActiveNow && (((!k2BatchHasFiyat && st && st.warn10Time && Date.now() - st.warn10Time > POST_WARN_GRACE)) ||
+          (k2Warn10Time && Date.now() - k2Warn10Time > POST_WARN_GRACE))) {
         const delKey = getDeleteKey(msg);
         const delMsgId = msg.key.id;
         const delText = msgText;
@@ -457,12 +462,9 @@ async function handleMessage(msg) {
         const delGroupName = groupName;
         const delUserPhone = userPhone;
         const delUserName = userName;
-        // POST-WARN batch key: K3 aktifse K3 batch'ine yaz (ayrı log), değilse K1 penceresine bağlı
-        const k3PaidTime = getK3PaidTime(userId);
-        const k3StillActive = k3PaidTime && (Date.now() - k3PaidTime < ((config.adIntervalMin || 5) * 60 * 1000));
-        const postWarnBatchKey = k3StillActive
-          ? `${userId}_k3_${k3PaidTime}`
-          : (st && st.windowStart ? `${userId}_${st.windowStart}` : `${userId}_pw_${Date.now()}`);
+        // POST-WARN'a özel ayrı batch key — K3 aktifken buraya girilmez, K1 log'una karışmaz
+        const postWarnWindowKey = st && st.warn10Time ? st.warn10Time : (k2BatchTracker[userId] && k2BatchTracker[userId].warn10Time ? k2BatchTracker[userId].warn10Time : Date.now());
+        const postWarnBatchKey = `${userId}_pw_${postWarnWindowKey}`;
         const capturedMsg = msg;
         setTimeout(async () => {
           if (hasFiyatMi(delText)) return;
