@@ -546,8 +546,9 @@ async function handleMessage(msg) {
             const WAIT_MS_CHECK = (config.photoWaitSec || 30) * 1000;
             // Pencere süresi geçmemiş olmalı
             if (Date.now() - t2.windowStart > WAIT_MS_CHECK + 2000) return false;
-            // K1 ve K2 pencereleri aynı zamanda açılmış olmalı (5sn tolerans — race condition)
-            if (Math.abs(t2.windowStart - k1WindowStart) > 5000) return false;
+            // K1 ve K2 pencereleri aynı zamanda açılmış olmalı (500ms tolerans — albüm race condition)
+            // 500ms üstü fark = farklı ilanlar, K1 korunmamalı
+            if (Math.abs(t2.windowStart - k1WindowStart) > 500) return false;
             return true;
           }
         });
