@@ -512,11 +512,7 @@ async function handleMessage(msg) {
 
       // KURAL 3: Her resimde önce kontrol edilir.
       // Sadece Kural 2 muafiyeti bittikten sonra aktif olur.
-      // Fiyatsız resimler K3'e takılmamalı — K3 yalnızca fiyatlı ilan sonrası tekrarlayan ilanları yakalar.
-      // Fiyatsız resim gelirse K3'ü atla, K1'e git.
-      const res3 = hasFiyat
-        ? await kural3Check({ sock, chatId, realUserId, msg, userId, userName, userPhone, groupName, msgText, stats, deletedAdsLog, saveDeletedLog, io, getDeleteKey, downloadMediaMessage, config, reklamMuafMsgIds })
-        : 'continue';
+      const res3 = await kural3Check({ sock, chatId, realUserId, msg, userId, userName, userPhone, groupName, msgText, stats, deletedAdsLog, saveDeletedLog, io, getDeleteKey, downloadMediaMessage, config, reklamMuafMsgIds });
       if (res3 === 'deleted') {
         // Kural 3 aktifken k2BatchTracker sıfırla — sonraki resimler Kural 2'ye gitmesin
         delete k2BatchTracker[userId];
@@ -540,26 +536,10 @@ async function handleMessage(msg) {
         });
       } else {
         // Henüz fiyatlı resim yok → Kural 1
-        // getK2BatchHasFiyat: 30sn beklerken batch'e fiyatlı resim geldiyse K1'i koru, K3 başlat
-        const kural3SetPaidTimeWrappedK1 = (uid) => {
-          kural3SetPaidTime(uid);
-          delete k2BatchTracker[uid];
-          // K3 başlarken spamTracker'ı sıfırla — eski warn10Time POST-WARN'a düşmesin
-          if (spamTracker[uid]) { spamTracker[uid].imgCount = 0; spamTracker[uid].warn10Time = 0; spamTracker[uid].windowStart = Date.now(); }
-        };
-      await kuralResim({
+        await kuralResim({
           sock, chatId, realUserId, msg, userId, userName, userPhone, groupName, msgText,
           spamTracker, stats, reklamMuafMsgIds, deletedAdsLog, saveDeletedLog, io, getDeleteKey,
-          downloadMediaMessage, config,
-          k2BatchTrackerRef: k2BatchTracker,
-          getK2BatchHasFiyat: (uid, k1WindowStart) => {
-            const t2 = k2BatchTracker[uid];
-            if (!t2 || !t2.hasFiyat) return false;
-            const WAIT_MS_CHECK = (config.photoWaitSec || 30) * 1000;
-            if (Date.now() - t2.windowStart > WAIT_MS_CHECK + 2000) return false;
-            return true;
-          },
-          kural3SetPaidTime: kural3SetPaidTimeWrappedK1
+          downloadMediaMessage, config
         });
       }
       return;
