@@ -361,7 +361,7 @@ async function handleMessage(msg) {
       msg.message?.stickerMessage || msg.message?.audioMessage ||
       msg.message?.viewOnceMessage || msg.message?.viewOnceMessageV2);
 
-    // Bot mesajlarını atla
+    // Bot kendi uyarı mesajlarını atla (döngü önleme)
     if (isFromMe && msgText && (msgText.includes('Grup Yönetimi') || msgText.includes('tespit edildi') || msgText.includes('susturulm') || msgText.includes('━━━'))) return;
     if (isFromMe && msgText && (msgText.includes('Bu ilan reklam') || msgText.includes('Reklam ücreti') || msgText.includes('Geri Yüklenen'))) return;
 
@@ -421,8 +421,8 @@ async function handleMessage(msg) {
     }
 
     if (!config.automation.noPrice) return;
-    // Bot kendi mesajlarını atlar (bot = senin hesabın, isFromMe yeterli)
-    if (isFromMe) return;
+    // TEST MODU: tüm muafiyet kaldırıldı, bot/admin da kurallara tabi
+    // if (isFromMe) return;
 
     const msgLower = msgText.toLowerCase();
     const hasFiyat = hasFiyatMi(msgText);
