@@ -421,8 +421,8 @@ async function handleMessage(msg) {
     }
 
     if (!config.automation.noPrice) return;
-    // Bot ve admin mesajları kurallara tabi değil
-    if (isFromMe || isAdmin) return;
+    // Bot kendi mesajlarını atlar (isFromMe = bot'un attığı)
+    if (isFromMe) return;
 
     const msgLower = msgText.toLowerCase();
     const hasFiyat = hasFiyatMi(msgText);
