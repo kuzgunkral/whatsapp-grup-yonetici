@@ -444,9 +444,11 @@ async function handleMessage(msg) {
 
       // Kural 2 batch tracker: pencere dolmuşsa sıfırla
       if (!k2BatchTracker[userId] || Date.now() - k2BatchTracker[userId].windowStart > WAIT_MS_CFG + 2000) {
-        k2BatchTracker[userId] = { hasFiyat: false, windowStart: Date.now(), warn10Time: 0 };
+        // Yeni pencere: sadece ilk resimde fiyat varsa batch fiyatlı başlar
+        k2BatchTracker[userId] = { hasFiyat: hasFiyat, windowStart: Date.now(), warn10Time: 0 };
       }
-      if (hasFiyat) k2BatchTracker[userId].hasFiyat = true;
+      // Pencere zaten açıksa: sonraki resimlerde gelen fiyat batch'i fiyatlıya çevirmesin
+      // (Kural 1 penceresi başladıktan sonra son resimde fiyat yazarak kurtal atlatılmasın)
       const k2BatchHasFiyat = k2BatchTracker[userId].hasFiyat;
       const k2Warn10Time = k2BatchTracker[userId].warn10Time || 0;
 
