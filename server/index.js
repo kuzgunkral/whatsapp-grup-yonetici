@@ -510,9 +510,10 @@ async function handleMessage(msg) {
         return;
       }
 
-      // KURAL 3: Her resimde önce kontrol edilir — fiyatlı/fiyatsız farketmez.
-      // K2 muafiyeti bittikten sonra 5dk boyunca tüm resimleri anında siler.
-      const res3 = await kural3Check({ sock, chatId, realUserId, msg, userId, userName, userPhone, groupName, msgText, stats, deletedAdsLog, saveDeletedLog, io, getDeleteKey, downloadMediaMessage, config, reklamMuafMsgIds });
+      // KURAL 3: K2 penceresi aktif değilse çalışır — fiyatlı/fiyatsız farketmez.
+      // K2 penceresi aktifken (fiyatliResimTracker) K3 atlanır — K2 koruması öncelikli.
+      const k2WindowActive = fiyatliResimTracker[userId] && (Date.now() - (fiyatliResimTracker[userId].windowStart || 0) < ((config.photoWaitSec || 30) * 1000 + 2000));
+      const res3 = k2WindowActive ? 'continue' : await kural3Check({ sock, chatId, realUserId, msg, userId, userName, userPhone, groupName, msgText, stats, deletedAdsLog, saveDeletedLog, io, getDeleteKey, downloadMediaMessage, config, reklamMuafMsgIds });
       if (res3 === 'deleted') {
         // Kural 3 aktifken k2BatchTracker sıfırla — sonraki resimler Kural 2'ye gitmesin
         delete k2BatchTracker[userId];
