@@ -45,7 +45,15 @@ console.log(`📂 MEDIA_DIR: ${MEDIA_DIR}`);
 const DEBUG_LOG_PATH = () => path.join(DATA_DIR, 'debug.log');
 const debugLog = (msg) => {
   const line = `[${new Date().toISOString()}] ${msg}\n`;
-  try { fs.appendFileSync(DEBUG_LOG_PATH(), line); } catch(e) {}
+  try {
+    // debug.log 500KB'ı geçerse sıfırla
+    const logPath = DEBUG_LOG_PATH();
+    try {
+      const stat = fs.statSync(logPath);
+      if (stat.size > 500 * 1024) fs.writeFileSync(logPath, '', 'utf8');
+    } catch(e) {}
+    fs.appendFileSync(logPath, line);
+  } catch(e) {}
 };
 
 const app = express();
@@ -93,15 +101,15 @@ function loadDeletedLog() {
   try {
     if (fs.existsSync(LOG_FILE)) {
       const stat = fs.statSync(LOG_FILE);
-      if (stat.size > 10 * 1024 * 1024) {
+      if (stat.size > 2 * 1024 * 1024) {
         console.log('⚠️ Log dosyası çok büyük, sıfırlanıyor...');
         fs.writeFileSync(LOG_FILE, '[]', 'utf8');
         deletedAdsLog = [];
         return;
       }
       deletedAdsLog = JSON.parse(fs.readFileSync(LOG_FILE, 'utf8'));
-      if (deletedAdsLog.length > 500) {
-        deletedAdsLog = deletedAdsLog.slice(0, 500);
+      if (deletedAdsLog.length > 100) {
+        deletedAdsLog = deletedAdsLog.slice(0, 100);
         fs.writeFileSync(LOG_FILE, JSON.stringify(deletedAdsLog), 'utf8');
       }
     }
@@ -1275,7 +1283,7 @@ setInterval(() => { io.emit('stats', stats); }, 10000);
 // ─── MEDYA TEMİZLEME (24 saatlik) ────────────────────────────────────────────
 // 24 saati geçen medya dosyaları diskten silinir + log kaydındaki referanslar temizlenir
 function cleanOldMedia() {
-  const MAX_AGE_MS = 6 * 60 * 60 * 1000; // 6 saat (disk dolmasin)
+  const MAX_AGE_MS = 2 * 60 * 60 * 1000; // 2 saat (volume dolmasin)
   const now = Date.now();
   try {
     if (!fs.existsSync(MEDIA_DIR)) return;
