@@ -1319,12 +1319,34 @@ function cleanOldMedia() {
 // Her 1 saatte bir çalıştır
 setInterval(cleanOldMedia, 60 * 60 * 1000);
 
+// ─── STARTUP MEDYA + LOG TEMIZLEME ───────────────────────────────────────────
+function cleanAllMediaOnStartup() {
+  try {
+    if (!fs.existsSync(MEDIA_DIR)) return;
+    const files = fs.readdirSync(MEDIA_DIR);
+    let deleted = 0;
+    for (const filename of files) {
+      try { fs.unlinkSync(path.join(MEDIA_DIR, filename)); deleted++; } catch(e) {}
+    }
+    // Log kayıtlarındaki medya referanslarını da temizle
+    for (const ad of deletedAdsLog) {
+      ad.medyaData = null; ad.medyaMimetype = null; ad.medyaListesi = [];
+    }
+    if (deleted > 0) {
+      saveDeletedLog();
+      console.log(`🧹 Startup: ${deleted} medya dosyası silindi`);
+    }
+    // debug.log sıfırla
+    try { fs.writeFileSync(DEBUG_LOG_PATH(), '', 'utf8'); } catch(e) {}
+    console.log('🧹 Startup: debug.log sıfırlandı');
+  } catch(e) { console.error('cleanAllMediaOnStartup hata:', e.message); }
+}
+
 // ─── SERVER START ─────────────────────────────────────────────────────────────
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
   console.log(`✅ Server ${PORT} portunda çalışıyor`);
-  // loadDeletedLog() ve loadConfig() startup'ta (satır 90-91) zaten çağrıldı
+  cleanAllMediaOnStartup(); // her restart'ta medya + debug.log temizle
   scheduleRuleReminder();
-  cleanOldMedia(); // başlangıçta eski medyaları temizle
   connect().catch(e => console.error('Initial connect error:', e.message));
 });
