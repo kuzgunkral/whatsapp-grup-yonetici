@@ -31,32 +31,10 @@ function setMediaDir(dir) {
  * Medyayı diske kaydeder. Başarılıysa { file, mimetype } döner, yoksa null.
  * file = sadece dosya adı (path değil), sunucu /api/media/:file ile serve eder.
  */
+// ⚠️ Medya kaydetme hizmeti geçici olarak pasifize edilmiştir.
+// Disk alanı korunması amacıyla silinen ilan görselleri kaydedilmemektedir.
 async function saveMediaFile(msg, downloadFn, batchKey, index) {
-  if (!MEDIA_DIR) return null;
-  try {
-    if (!msg.message) return null;
-    const { downloadMediaMessage } = await import('baileys');
-    const buffer = await downloadMediaMessage(msg, 'buffer', {});
-    if (!buffer) return null;
-    let mimetype = 'image/jpeg';
-    let ext = 'jpg';
-    if (msg.message.imageMessage) { mimetype = msg.message.imageMessage.mimetype || 'image/jpeg'; }
-    else if (msg.message.videoMessage) { mimetype = msg.message.videoMessage.mimetype || 'video/mp4'; ext = 'mp4'; }
-    else if (msg.message.documentMessage) { mimetype = msg.message.documentMessage.mimetype || 'application/octet-stream'; ext = 'bin'; }
-    if (mimetype.includes('jpeg') || mimetype.includes('jpg')) ext = 'jpg';
-    else if (mimetype.includes('png')) ext = 'png';
-    else if (mimetype.includes('webp')) ext = 'webp';
-    else if (mimetype.includes('mp4')) ext = 'mp4';
-    // Güvenli dosya adı: batchKey içindeki @ ve özel karakterleri temizle
-    const safeKey = batchKey.replace(/[^a-zA-Z0-9_\-]/g, '_');
-    const filename = `${safeKey}_${index}_${Date.now()}.${ext}`;
-    const filePath = path.join(MEDIA_DIR, filename);
-    fs.writeFileSync(filePath, buffer);
-    return { file: filename, mimetype };
-  } catch(e) {
-    console.error('[saveMediaFile] Hata:', e.message);
-    return null;
-  }
+  return null;
 }
 
 // ─── FIYAT ALGILAMA ─────────────────────────────────────────────────────────
